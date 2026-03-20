@@ -14,7 +14,291 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      admin_logs: {
+        Row: {
+          action: string
+          admin_id: number
+          admin_name: string | null
+          chat_id: number
+          id: string
+          reason: string | null
+          target_id: number | null
+          target_name: string | null
+          timestamp: string
+        }
+        Insert: {
+          action: string
+          admin_id: number
+          admin_name?: string | null
+          chat_id: number
+          id?: string
+          reason?: string | null
+          target_id?: number | null
+          target_name?: string | null
+          timestamp?: string
+        }
+        Update: {
+          action?: string
+          admin_id?: number
+          admin_name?: string | null
+          chat_id?: number
+          id?: string
+          reason?: string | null
+          target_id?: number | null
+          target_name?: string | null
+          timestamp?: string
+        }
+        Relationships: []
+      }
+      auto_responses: {
+        Row: {
+          chat_id: number
+          created_at: string
+          created_by: string | null
+          id: string
+          response: string
+          trigger_word: string
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          response: string
+          trigger_word: string
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          response?: string
+          trigger_word?: string
+        }
+        Relationships: []
+      }
+      group_settings: {
+        Row: {
+          chat_id: number
+          created_at: string
+          links_allowed: boolean
+          max_warnings: number
+          media_allowed: boolean
+          spam_protection: boolean
+          welcome_enabled: boolean
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          links_allowed?: boolean
+          max_warnings?: number
+          media_allowed?: boolean
+          spam_protection?: boolean
+          welcome_enabled?: boolean
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          links_allowed?: boolean
+          max_warnings?: number
+          media_allowed?: boolean
+          spam_protection?: boolean
+          welcome_enabled?: boolean
+        }
+        Relationships: []
+      }
+      members: {
+        Row: {
+          chat_id: number
+          coins: number
+          full_name: string | null
+          join_date: string
+          last_active: string
+          last_daily: string | null
+          level: number
+          messages_count: number
+          points: number
+          user_id: number
+          username: string | null
+          warnings: number
+        }
+        Insert: {
+          chat_id: number
+          coins?: number
+          full_name?: string | null
+          join_date?: string
+          last_active?: string
+          last_daily?: string | null
+          level?: number
+          messages_count?: number
+          points?: number
+          user_id: number
+          username?: string | null
+          warnings?: number
+        }
+        Update: {
+          chat_id?: number
+          coins?: number
+          full_name?: string | null
+          join_date?: string
+          last_active?: string
+          last_daily?: string | null
+          level?: number
+          messages_count?: number
+          points?: number
+          user_id?: number
+          username?: string | null
+          warnings?: number
+        }
+        Relationships: []
+      }
+      messages_log: {
+        Row: {
+          chat_id: number
+          id: string
+          message_preview: string | null
+          timestamp: string
+          user_id: number
+          user_name: string | null
+        }
+        Insert: {
+          chat_id: number
+          id?: string
+          message_preview?: string | null
+          timestamp?: string
+          user_id: number
+          user_name?: string | null
+        }
+        Update: {
+          chat_id?: number
+          id?: string
+          message_preview?: string | null
+          timestamp?: string
+          user_id?: number
+          user_name?: string | null
+        }
+        Relationships: []
+      }
+      quiz_questions: {
+        Row: {
+          answer: string
+          category: string | null
+          id: string
+          options: Json
+          question: string
+        }
+        Insert: {
+          answer: string
+          category?: string | null
+          id?: string
+          options?: Json
+          question: string
+        }
+        Update: {
+          answer?: string
+          category?: string | null
+          id?: string
+          options?: Json
+          question?: string
+        }
+        Relationships: []
+      }
+      telegram_bot_state: {
+        Row: {
+          id: number
+          update_offset: number
+          updated_at: string
+        }
+        Insert: {
+          id: number
+          update_offset?: number
+          updated_at?: string
+        }
+        Update: {
+          id?: number
+          update_offset?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      telegram_messages: {
+        Row: {
+          chat_id: number
+          created_at: string
+          raw_update: Json
+          text: string | null
+          update_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          raw_update: Json
+          text?: string | null
+          update_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          raw_update?: Json
+          text?: string | null
+          update_id?: number
+        }
+        Relationships: []
+      }
+      user_titles: {
+        Row: {
+          chat_id: number
+          title: string
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          title: string
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          title?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
+      whispers: {
+        Row: {
+          chat_id: number
+          created_at: string
+          id: string
+          is_read: boolean
+          message: string
+          recipient_id: number
+          recipient_name: string | null
+          sender_id: number
+          sender_name: string | null
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message: string
+          recipient_id: number
+          recipient_name?: string | null
+          sender_id: number
+          sender_name?: string | null
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          id?: string
+          is_read?: boolean
+          message?: string
+          recipient_id?: number
+          recipient_name?: string | null
+          sender_id?: number
+          sender_name?: string | null
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
