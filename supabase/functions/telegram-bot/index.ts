@@ -73,6 +73,8 @@ async function getAIResponse(text: string): Promise<string | null> {
   }
 }
 
+const DEVELOPER_ID = 6570434162;
+
 // ============ COOLDOWN TRACKING ============
 const lastReply: Record<number, number> = {};
 const COOLDOWN_MS = 8000;
@@ -82,6 +84,10 @@ function canReply(chatId: number): boolean {
   if (lastReply[chatId] && now - lastReply[chatId] < COOLDOWN_MS) return false;
   lastReply[chatId] = now;
   return true;
+}
+
+function isDeveloper(userId: number): boolean {
+  return userId === DEVELOPER_ID;
 }
 
 // ============ JOKES, FORTUNES, ETC ============
