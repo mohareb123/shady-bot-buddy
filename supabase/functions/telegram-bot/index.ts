@@ -73,6 +73,8 @@ async function getAIResponse(text: string): Promise<string | null> {
   }
 }
 
+const DEVELOPER_ID = 6570434162;
+
 // ============ COOLDOWN TRACKING ============
 const lastReply: Record<number, number> = {};
 const COOLDOWN_MS = 8000;
@@ -82,6 +84,10 @@ function canReply(chatId: number): boolean {
   if (lastReply[chatId] && now - lastReply[chatId] < COOLDOWN_MS) return false;
   lastReply[chatId] = now;
   return true;
+}
+
+function isDeveloper(userId: number): boolean {
+  return userId === DEVELOPER_ID;
 }
 
 // ============ JOKES, FORTUNES, ETC ============
@@ -151,7 +157,15 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const { update } = await req.json();
+    const body = await req.json();
+    
+    // Handle broadcast action from dashboard
+    if (body.action === 'broadcast' && body.message) {
+      await handleBroadcast(getSupabase(), body.message, body.notification_id);
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+    
+    const { update } = body;
     if (!update) return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
 
     const supabase = getSupabase();
@@ -306,6 +320,10 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/all': return await cmdAll(chatId, userId);
     case '/calc': return await cmdCalc(chatId, text);
     case '/dev': return await cmdDev(supabase, chatId, userId);
+    case '/broadcast': return await cmdBroadcast(supabase, chatId, userId, text);
+    case '/addcoins': return await cmdAddCoins(supabase, chatId, userId, msg, parts);
+    case '/addpoints': return await cmdAddPoints(supabase, chatId, userId, msg, parts);
+    case '/resetwarns': return await cmdResetWarns(supabase, chatId, userId, msg);
   }
 }
 
@@ -858,6 +876,64 @@ async function cmdDev(supabase: any, chatId: number, userId: number) {
   }
 
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+}
+
+// ============ BROADCAST & DEVELOPER COMMANDS ============
+
+async function handleBroadcast(supabase: any, message: string, notificationId?: string) {
+  const { data: chats } = await supabase.from('members').select('chat_id');
+  if (!chats) return;
+  const uniqueChats = [...new Set(chats.map((c: any) => c.chat_id))];
+  for (const chatId of uniqueChats) {
+    try {
+      await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام من المطور*\n\n${message}`, parse_mode: 'Markdown' });
+    } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
+  }
+  if (notificationId) {
+    await supabase.from('notifications').update({ is_sent: true }).eq('id', notificationId);
+  }
+}
+
+async function cmdBroadcast(supabase: any, chatId: number, userId: number, text: string) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const msg = text.replace(/\/broadcast\s*/, '').trim();
+  if (!msg) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /broadcast <الرسالة>' });
+  const { data: notif } = await supabase.from('notifications').insert({ message: msg, created_by: userId, is_sent: false }).select().single();
+  await handleBroadcast(supabase, msg, notif?.id);
+  await tg('sendMessage', { chat_id: chatId, text: '✅ تم إرسال الإشعار لجميع المجموعات' });
+}
+
+async function cmdAddCoins(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  const amount = parseInt(parts[1]);
+  if (isNaN(amount)) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /addcoins <عدد>' });
+  const { data: member } = await supabase.from('members').select('coins').eq('user_id', target.id).eq('chat_id', chatId).single();
+  if (!member) return tg('sendMessage', { chat_id: chatId, text: '❌ العضو غير موجود' });
+  await supabase.from('members').update({ coins: member.coins + amount }).eq('user_id', target.id).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إضافة ${amount} عملة لـ ${target.name}` });
+}
+
+async function cmdAddPoints(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  const amount = parseInt(parts[1]);
+  if (isNaN(amount)) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /addpoints <عدد>' });
+  const { data: member } = await supabase.from('members').select('points, level').eq('user_id', target.id).eq('chat_id', chatId).single();
+  if (!member) return tg('sendMessage', { chat_id: chatId, text: '❌ العضو غير موجود' });
+  const newPoints = member.points + amount;
+  await supabase.from('members').update({ points: newPoints, level: calcLevel(newPoints) }).eq('user_id', target.id).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إضافة ${amount} نقطة لـ ${target.name}` });
+}
+
+async function cmdResetWarns(supabase: any, chatId: number, userId: number, msg: any) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  await supabase.from('members').update({ warnings: 0 }).eq('user_id', target.id).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إزالة جميع تحذيرات ${target.name}` });
 }
 
 // ============ LINK PROTECTION ============

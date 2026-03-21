@@ -15,7 +15,7 @@ const Index = () => {
             بوت تليغرام ذكي لإدارة المجموعات مع نظام نقاط وألعاب وردود ذكية
           </p>
         </div>
-        <Link to="/dashboard">
+        <Link to="/login">
           <Button size="lg" className="gap-2">
             <ArrowLeft className="w-4 h-4" />
             دخول لوحة التحكم

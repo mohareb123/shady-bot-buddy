@@ -179,6 +179,30 @@ export type Database = {
         }
         Relationships: []
       }
+      notifications: {
+        Row: {
+          created_at: string
+          created_by: number | null
+          id: string
+          is_sent: boolean
+          message: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: number | null
+          id?: string
+          is_sent?: boolean
+          message: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: number | null
+          id?: string
+          is_sent?: boolean
+          message?: string
+        }
+        Relationships: []
+      }
       quiz_questions: {
         Row: {
           answer: string
