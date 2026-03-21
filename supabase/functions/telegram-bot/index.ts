@@ -157,7 +157,15 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const { update } = await req.json();
+    const body = await req.json();
+    
+    // Handle broadcast action from dashboard
+    if (body.action === 'broadcast' && body.message) {
+      await handleBroadcast(getSupabase(), body.message, body.notification_id);
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+    
+    const { update } = body;
     if (!update) return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
 
     const supabase = getSupabase();
