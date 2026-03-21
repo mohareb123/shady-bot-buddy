@@ -320,6 +320,10 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/all': return await cmdAll(chatId, userId);
     case '/calc': return await cmdCalc(chatId, text);
     case '/dev': return await cmdDev(supabase, chatId, userId);
+    case '/broadcast': return await cmdBroadcast(supabase, chatId, userId, text);
+    case '/addcoins': return await cmdAddCoins(supabase, chatId, userId, msg, parts);
+    case '/addpoints': return await cmdAddPoints(supabase, chatId, userId, msg, parts);
+    case '/resetwarns': return await cmdResetWarns(supabase, chatId, userId, msg);
   }
 }
 
