@@ -40,36 +40,158 @@ function pointsForLevel(level: number): number {
   return (level - 1) * (level - 1) * 100;
 }
 
-// ============ SMART RESPONSES (AI via Lovable AI) ============
-async function getAIResponse(text: string): Promise<string | null> {
+// ============ AI WITH ACTION EXECUTION ============
+
+const AI_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "execute_action",
+      description: "Execute a bot admin/moderation action when the user asks Shady to do something like delete, kick, ban, mute, warn, unmute, promote a user. Only use when the user is clearly commanding an action.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: ["delete_message", "kick", "ban", "mute", "unmute", "warn", "promote", "add_coins", "add_points", "reset_warns"],
+            description: "The action to perform"
+          },
+          mute_minutes: { type: "number", description: "Duration in minutes for mute (default 60)" },
+          amount: { type: "number", description: "Amount for add_coins or add_points" },
+          reason: { type: "string", description: "Reason for warn action" },
+          reply_text: { type: "string", description: "A short Arabic response to send after executing the action" }
+        },
+        required: ["action", "reply_text"],
+        additionalProperties: false
+      }
+    }
+  }
+];
+
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) return null;
-    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
-        messages: [
-          {
-            role: 'system',
-            content: `أنت بوت تليغرام اسمك "شادي". شخصيتك مرحة وظريفة وتحب المزاح. 
+    if (!LOVABLE_API_KEY) return { text: null, action: null };
+
+    const systemPrompt = `أنت بوت تليغرام اسمك "شادي". شخصيتك مرحة وظريفة وتحب المزاح. 
 ترد بالعربية دائماً وبأسلوب شبابي. ردودك قصيرة (جملة أو جملتين كحد أقصى).
 إذا حياك أحد رد بتحية لطيفة. إذا شكرك رد بتواضع. إذا سألك من أنت عرّف عن نفسك.
-إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.`
-          },
-          { role: 'user', content: text }
-        ],
-      }),
+إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.
+${isAdminOrDev ? `
+المستخدم الحالي مشرف/مطور وله صلاحيات كاملة.
+إذا طلب منك تنفيذ إجراء إداري (حذف رسالة، طرد، حظر، كتم، تحذير، فك كتم، ترقية، إضافة عملات/نقاط، إزالة تحذيرات) استخدم أداة execute_action.
+${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّذ الإجراء عليه.' : 'لا يوجد رد على رسالة. إذا طلب إجراء على شخص أخبره يرد على رسالة الشخص المستهدف.'}
+` : 'المستخدم ليس مشرفاً. إذا طلب إجراء إداري أخبره أنه يحتاج صلاحيات مشرف.'}`;
+
+    const body: any = {
+      model: 'google/gemini-3-flash-preview',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: text }
+      ],
+    };
+
+    if (isAdminOrDev) {
+      body.tools = AI_TOOLS;
+      body.tool_choice = "auto";
+    }
+
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
-    if (!res.ok) return null;
+    if (!res.ok) return { text: null, action: null };
     const data = await res.json();
-    return data.choices?.[0]?.message?.content || null;
-  } catch {
-    return null;
+    const choice = data.choices?.[0];
+    
+    if (choice?.message?.tool_calls?.length > 0) {
+      const toolCall = choice.message.tool_calls[0];
+      if (toolCall.function?.name === 'execute_action') {
+        try {
+          const action = JSON.parse(toolCall.function.arguments);
+          return { text: action.reply_text || null, action };
+        } catch { return { text: choice?.message?.content || null, action: null }; }
+      }
+    }
+    
+    return { text: choice?.message?.content || null, action: null };
+  } catch { return { text: null, action: null }; }
+}
+
+async function executeAIAction(supabase: any, action: any, msg: any, chatId: number, userId: number, fullName: string) {
+  const target = msg.reply_to_message ? {
+    id: msg.reply_to_message.from.id,
+    name: `${msg.reply_to_message.from.first_name || ''} ${msg.reply_to_message.from.last_name || ''}`.trim(),
+  } : null;
+  if (!target) return;
+
+  switch (action.action) {
+    case 'delete_message':
+      await tg('deleteMessage', { chat_id: chatId, message_id: msg.reply_to_message.message_id });
+      break;
+    case 'kick':
+      await tg('banChatMember', { chat_id: chatId, user_id: target.id });
+      await tg('unbanChatMember', { chat_id: chatId, user_id: target.id, only_if_banned: true });
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'kick (AI)');
+      break;
+    case 'ban':
+      await tg('banChatMember', { chat_id: chatId, user_id: target.id });
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'ban (AI)');
+      break;
+    case 'mute': {
+      const mins = action.mute_minutes || 60;
+      await tg('restrictChatMember', {
+        chat_id: chatId, user_id: target.id, until_date: Math.floor(Date.now() / 1000) + mins * 60,
+        permissions: { can_send_messages: false, can_send_media_messages: false, can_send_other_messages: false },
+      });
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'mute (AI)', `${mins} دقيقة`);
+      break;
+    }
+    case 'unmute':
+      await tg('restrictChatMember', {
+        chat_id: chatId, user_id: target.id,
+        permissions: { can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true, can_add_web_page_previews: true },
+      });
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'unmute (AI)');
+      break;
+    case 'warn': {
+      const { data: member } = await supabase.from('members').select('warnings').eq('user_id', target.id).eq('chat_id', chatId).single();
+      const newW = (member?.warnings || 0) + 1;
+      const { data: settings } = await supabase.from('group_settings').select('max_warnings').eq('chat_id', chatId).single();
+      await supabase.from('members').update({ warnings: newW }).eq('user_id', target.id).eq('chat_id', chatId);
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'warn (AI)', action.reason || 'بواسطة شادي');
+      if (newW >= (settings?.max_warnings || 3)) {
+        await tg('banChatMember', { chat_id: chatId, user_id: target.id });
+        await tg('unbanChatMember', { chat_id: chatId, user_id: target.id, only_if_banned: true });
+      }
+      break;
+    }
+    case 'promote':
+      await tg('promoteChatMember', {
+        chat_id: chatId, user_id: target.id,
+        can_manage_chat: true, can_delete_messages: true, can_restrict_members: true,
+        can_promote_members: false, can_change_info: true, can_invite_users: true,
+        can_pin_messages: true, can_manage_video_chats: true,
+      });
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'promote (AI)');
+      break;
+    case 'add_coins': {
+      const amt = action.amount || 100;
+      const { data: m } = await supabase.from('members').select('coins').eq('user_id', target.id).eq('chat_id', chatId).single();
+      if (m) await supabase.from('members').update({ coins: m.coins + amt }).eq('user_id', target.id).eq('chat_id', chatId);
+      break;
+    }
+    case 'add_points': {
+      const amt = action.amount || 100;
+      const { data: m } = await supabase.from('members').select('points').eq('user_id', target.id).eq('chat_id', chatId).single();
+      if (m) await supabase.from('members').update({ points: m.points + amt, level: calcLevel(m.points + amt) }).eq('user_id', target.id).eq('chat_id', chatId);
+      break;
+    }
+    case 'reset_warns':
+      await supabase.from('members').update({ warnings: 0 }).eq('user_id', target.id).eq('chat_id', chatId);
+      await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'reset_warns (AI)');
+      break;
   }
 }
 
@@ -232,7 +354,6 @@ Deno.serve(async (req) => {
       Math.random() < 0.07;
 
     if (shouldReply && canReply(chatId)) {
-      // Check for keyword triggers first
       const lowerText = text.toLowerCase();
       if (lowerText.includes('نكتة') || lowerText.includes('نكته')) {
         await tg('sendMessage', { chat_id: chatId, text: pick(jokes), reply_to_message_id: msg.message_id });
@@ -241,10 +362,19 @@ Deno.serve(async (req) => {
       } else if (lowerText.includes('كويز') || lowerText.includes('اختبار')) {
         await sendQuiz(supabase, chatId);
       } else {
-        // AI response
-        const aiReply = await getAIResponse(text);
-        if (aiReply) {
-          await tg('sendMessage', { chat_id: chatId, text: aiReply, reply_to_message_id: msg.message_id });
+        // AI response with action capability
+        const hasReplyTarget = !!msg.reply_to_message;
+        const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin);
+        
+        // Execute action if AI decided to
+        if (aiResult.action) {
+          await executeAIAction(supabase, aiResult.action, msg, chatId, userId, fullName);
+        }
+        
+        // Send text reply
+        if (aiResult.text) {
+          await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
         }
       }
     }
