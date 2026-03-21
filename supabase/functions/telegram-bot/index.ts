@@ -354,7 +354,6 @@ Deno.serve(async (req) => {
       Math.random() < 0.07;
 
     if (shouldReply && canReply(chatId)) {
-      // Check for keyword triggers first
       const lowerText = text.toLowerCase();
       if (lowerText.includes('نكتة') || lowerText.includes('نكته')) {
         await tg('sendMessage', { chat_id: chatId, text: pick(jokes), reply_to_message_id: msg.message_id });
@@ -363,10 +362,19 @@ Deno.serve(async (req) => {
       } else if (lowerText.includes('كويز') || lowerText.includes('اختبار')) {
         await sendQuiz(supabase, chatId);
       } else {
-        // AI response
-        const aiReply = await getAIResponse(text);
-        if (aiReply) {
-          await tg('sendMessage', { chat_id: chatId, text: aiReply, reply_to_message_id: msg.message_id });
+        // AI response with action capability
+        const hasReplyTarget = !!msg.reply_to_message;
+        const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin);
+        
+        // Execute action if AI decided to
+        if (aiResult.action) {
+          await executeAIAction(supabase, aiResult.action, msg, chatId, userId, fullName);
+        }
+        
+        // Send text reply
+        if (aiResult.text) {
+          await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
         }
       }
     }
