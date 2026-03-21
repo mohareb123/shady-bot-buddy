@@ -878,6 +878,64 @@ async function cmdDev(supabase: any, chatId: number, userId: number) {
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
 }
 
+// ============ BROADCAST & DEVELOPER COMMANDS ============
+
+async function handleBroadcast(supabase: any, message: string, notificationId?: string) {
+  const { data: chats } = await supabase.from('members').select('chat_id');
+  if (!chats) return;
+  const uniqueChats = [...new Set(chats.map((c: any) => c.chat_id))];
+  for (const chatId of uniqueChats) {
+    try {
+      await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام من المطور*\n\n${message}`, parse_mode: 'Markdown' });
+    } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
+  }
+  if (notificationId) {
+    await supabase.from('notifications').update({ is_sent: true }).eq('id', notificationId);
+  }
+}
+
+async function cmdBroadcast(supabase: any, chatId: number, userId: number, text: string) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const msg = text.replace(/\/broadcast\s*/, '').trim();
+  if (!msg) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /broadcast <الرسالة>' });
+  const { data: notif } = await supabase.from('notifications').insert({ message: msg, created_by: userId, is_sent: false }).select().single();
+  await handleBroadcast(supabase, msg, notif?.id);
+  await tg('sendMessage', { chat_id: chatId, text: '✅ تم إرسال الإشعار لجميع المجموعات' });
+}
+
+async function cmdAddCoins(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  const amount = parseInt(parts[1]);
+  if (isNaN(amount)) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /addcoins <عدد>' });
+  const { data: member } = await supabase.from('members').select('coins').eq('user_id', target.id).eq('chat_id', chatId).single();
+  if (!member) return tg('sendMessage', { chat_id: chatId, text: '❌ العضو غير موجود' });
+  await supabase.from('members').update({ coins: member.coins + amount }).eq('user_id', target.id).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إضافة ${amount} عملة لـ ${target.name}` });
+}
+
+async function cmdAddPoints(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  const amount = parseInt(parts[1]);
+  if (isNaN(amount)) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /addpoints <عدد>' });
+  const { data: member } = await supabase.from('members').select('points, level').eq('user_id', target.id).eq('chat_id', chatId).single();
+  if (!member) return tg('sendMessage', { chat_id: chatId, text: '❌ العضو غير موجود' });
+  const newPoints = member.points + amount;
+  await supabase.from('members').update({ points: newPoints, level: calcLevel(newPoints) }).eq('user_id', target.id).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إضافة ${amount} نقطة لـ ${target.name}` });
+}
+
+async function cmdResetWarns(supabase: any, chatId: number, userId: number, msg: any) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  await supabase.from('members').update({ warnings: 0 }).eq('user_id', target.id).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إزالة جميع تحذيرات ${target.name}` });
+}
+
 // ============ LINK PROTECTION ============
 
 async function checkLinks(supabase: any, msg: any, chatId: number, userId: number, fullName: string): Promise<boolean> {
