@@ -2,8 +2,10 @@ import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { 
   LayoutDashboard, Users, MessageSquare, Shield, 
-  HelpCircle, Bot, Settings
+  HelpCircle, Bot, Settings, Bell, LogOut
 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
+import { Button } from "@/components/ui/button";
 
 const navItems = [
   { path: "/dashboard", label: "الرئيسية", icon: LayoutDashboard },
@@ -12,14 +14,15 @@ const navItems = [
   { path: "/logs", label: "السجلات", icon: Shield },
   { path: "/responses", label: "الردود التلقائية", icon: MessageSquare },
   { path: "/questions", label: "الأسئلة", icon: HelpCircle },
+  { path: "/notifications", label: "الإشعارات", icon: Bell },
 ];
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const { logout } = useAuth();
 
   return (
     <div dir="rtl" className="min-h-screen bg-background flex">
-      {/* Sidebar */}
       <aside className="w-64 border-l bg-card flex flex-col shrink-0">
         <div className="p-6 border-b flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center">
@@ -51,9 +54,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             );
           })}
         </nav>
+        <div className="p-3 border-t">
+          <Button
+            variant="ghost"
+            className="w-full justify-start gap-3 text-muted-foreground hover:text-destructive"
+            onClick={logout}
+          >
+            <LogOut className="w-4 h-4" />
+            تسجيل الخروج
+          </Button>
+        </div>
       </aside>
-
-      {/* Main content */}
       <main className="flex-1 overflow-auto">
         <div className="p-8 max-w-6xl">
           {children}
