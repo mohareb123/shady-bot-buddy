@@ -454,6 +454,21 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/addcoins': return await cmdAddCoins(supabase, chatId, userId, msg, parts);
     case '/addpoints': return await cmdAddPoints(supabase, chatId, userId, msg, parts);
     case '/resetwarns': return await cmdResetWarns(supabase, chatId, userId, msg);
+    // New commands
+    case '/call': return await cmdCallAll(supabase, chatId, userId);
+    case '/tagall': return await cmdCallAll(supabase, chatId, userId);
+    case '/pin': return await cmdPin(chatId, userId, msg);
+    case '/unpin': return await cmdUnpin(chatId, userId, msg);
+    case '/id': return await cmdId(chatId, msg);
+    case '/info': return await cmdInfo(supabase, chatId, msg);
+    case '/rules': return await cmdRules(supabase, chatId);
+    case '/setrules': return await cmdSetRules(supabase, chatId, userId, text);
+    case '/demote': return await cmdDemote(supabase, msg, chatId, userId, fullName);
+    case '/unban': return await cmdUnban(supabase, msg, chatId, userId, fullName);
+    case '/help': return await cmdHelp(chatId);
+    case '/report': return await cmdReport(chatId, userId, msg, fullName);
+    case '/dice': return await cmdDice(chatId);
+    case '/coinflip': return await cmdCoinFlip(chatId);
   }
 }
 
