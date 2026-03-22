@@ -1430,6 +1430,7 @@ async function handleCallbackQuery(supabase: any, query: any) {
               [{ text: '🧠 كويز', callback_data: 'game_quiz' }, { text: '💻 اختراق', callback_data: 'game_hack' }],
               [{ text: '💘 توافق', callback_data: 'game_ship' }, { text: '🎱 كرة سحرية', callback_data: 'game_8ball' }],
               [{ text: '😂 نكتة', callback_data: 'game_joke' }, { text: '🔮 حظك', callback_data: 'game_fortune' }],
+              [{ text: '🎲 نرد', callback_data: 'game_dice' }, { text: '🪙 عملة', callback_data: 'game_coinflip' }],
             ]
           },
         });
