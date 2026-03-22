@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Card, CardContent } from "@/components/ui/card";
+import { Shield } from "lucide-react";
 
 export default function LogsPage() {
   const { data: logs, isLoading } = useQuery({
@@ -22,40 +22,34 @@ export default function LogsPage() {
           <p className="text-muted-foreground mt-1">جميع الإجراءات الإدارية</p>
         </div>
 
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">الإجراء</TableHead>
-                  <TableHead className="text-right">الهدف</TableHead>
-                  <TableHead className="text-right">المشرف</TableHead>
-                  <TableHead className="text-right">السبب</TableHead>
-                  <TableHead className="text-right">التاريخ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">جاري التحميل...</TableCell></TableRow>
-                ) : logs && logs.length > 0 ? (
-                  logs.map((log: any) => (
-                    <TableRow key={log.id}>
-                      <TableCell className="font-medium">{log.action}</TableCell>
-                      <TableCell>{log.target_name}</TableCell>
-                      <TableCell>{log.admin_name}</TableCell>
-                      <TableCell className="text-muted-foreground">{log.reason || "—"}</TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {new Date(log.timestamp).toLocaleString("ar-EG")}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow><TableCell colSpan={5} className="text-center py-8 text-muted-foreground">لا توجد سجلات</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        {isLoading ? (
+          <p className="text-muted-foreground text-center">جاري التحميل...</p>
+        ) : logs && logs.length > 0 ? (
+          <div className="space-y-3">
+            {logs.map((log: any) => (
+              <Card key={log.id}>
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    <Shield className="w-4 h-4 text-muted-foreground mt-1 shrink-0" />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium text-foreground text-sm">{log.action}</span>
+                        {log.target_name && <span className="text-sm text-muted-foreground">← {log.target_name}</span>}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        <span>بواسطة {log.admin_name}</span>
+                        {log.reason && <span>— {log.reason}</span>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString("ar-EG")}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card><CardContent className="p-8 text-center text-muted-foreground">لا توجد سجلات</CardContent></Card>
+        )}
       </div>
     </DashboardLayout>
   );

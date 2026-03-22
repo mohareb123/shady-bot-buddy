@@ -5,7 +5,6 @@ import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Bell, Send } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -27,17 +26,12 @@ export default function NotificationsPage() {
   const sendNotification = useMutation({
     mutationFn: async (msg: string) => {
       const { data, error } = await supabase.from("notifications").insert({
-        message: msg,
-        created_by: 6570434162,
-        is_sent: false,
+        message: msg, created_by: 6570434162, is_sent: false,
       }).select().single();
       if (error) throw error;
-
-      // Trigger the broadcast via edge function
-      const res = await supabase.functions.invoke("telegram-bot", {
+      return await supabase.functions.invoke("telegram-bot", {
         body: { action: "broadcast", notification_id: data.id, message: msg },
       });
-      return res;
     },
     onSuccess: () => {
       toast({ title: "✅ تم", description: "تم إرسال الإشعار لجميع المستخدمين" });
@@ -60,8 +54,7 @@ export default function NotificationsPage() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
-              <Bell className="w-5 h-5" />
-              إرسال إشعار جديد
+              <Bell className="w-5 h-5" /> إرسال إشعار جديد
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -69,8 +62,7 @@ export default function NotificationsPage() {
               placeholder="اكتب نص الإشعار هنا..."
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              rows={4}
-              dir="rtl"
+              rows={4} dir="rtl"
             />
             <Button
               onClick={() => message.trim() && sendNotification.mutate(message.trim())}
@@ -83,43 +75,29 @@ export default function NotificationsPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">سجل الإشعارات</CardTitle>
-          </CardHeader>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="text-right">الرسالة</TableHead>
-                  <TableHead className="text-right">الحالة</TableHead>
-                  <TableHead className="text-right">التاريخ</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading ? (
-                  <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">جاري التحميل...</TableCell></TableRow>
-                ) : notifications && notifications.length > 0 ? (
-                  notifications.map((n: any) => (
-                    <TableRow key={n.id}>
-                      <TableCell className="max-w-xs truncate">{n.message}</TableCell>
-                      <TableCell>
-                        <Badge variant={n.is_sent ? "default" : "secondary"}>
-                          {n.is_sent ? "✅ تم الإرسال" : "⏳ قيد الإرسال"}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {new Date(n.created_at).toLocaleString("ar-EG")}
-                      </TableCell>
-                    </TableRow>
-                  ))
-                ) : (
-                  <TableRow><TableCell colSpan={3} className="text-center py-8 text-muted-foreground">لا توجد إشعارات بعد</TableCell></TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+        <div className="space-y-3">
+          {isLoading ? (
+            <p className="text-muted-foreground text-center">جاري التحميل...</p>
+          ) : notifications && notifications.length > 0 ? (
+            notifications.map((n: any) => (
+              <Card key={n.id}>
+                <CardContent className="p-4 space-y-2">
+                  <p className="text-sm text-foreground break-words">{n.message}</p>
+                  <div className="flex items-center justify-between">
+                    <Badge variant={n.is_sent ? "default" : "secondary"}>
+                      {n.is_sent ? "✅ تم الإرسال" : "⏳ قيد الإرسال"}
+                    </Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {new Date(n.created_at).toLocaleString("ar-EG")}
+                    </span>
+                  </div>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <Card><CardContent className="p-8 text-center text-muted-foreground">لا توجد إشعارات بعد</CardContent></Card>
+          )}
+        </div>
       </div>
     </DashboardLayout>
   );
