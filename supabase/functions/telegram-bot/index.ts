@@ -1414,11 +1414,7 @@ async function handleCallbackQuery(supabase: any, query: any) {
     switch (menu) {
       case 'commands':
         await tg('answerCallbackQuery', { callback_query_id: query.id });
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text: `📋 *أوامر شادي*\n\n*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر\n/stats - إحصائياتك\n/top - الترتيب\n\n*🎮 ألعاب:*\n/quiz - كويز\n/hack - اختراق وهمي\n/ship - توافق\n/8ball - كرة سحرية\n/fortune - حظك\n/joke - نكتة\n/roast - هجاية\n/compliment - مدح\n/wisdom - حكمة\n/judgment - أحكام\n\n*🤫 اجتماعي:*\n/whisper - همسة سرية\n\n*🛠️ إدارة:*\n/ban /kick /mute /unmute /warn /promote\n/settings - الإعدادات\n/addresponse - إضافة رد\n/responses - الردود\n/calc - آلة حاسبة`,
-          parse_mode: 'Markdown',
-        });
+        await cmdHelp(chatId);
         break;
       case 'stats':
         await tg('answerCallbackQuery', { callback_query_id: query.id });
