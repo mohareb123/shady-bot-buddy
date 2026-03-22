@@ -1460,6 +1460,8 @@ async function handleCallbackQuery(supabase: any, query: any) {
       case 'hack': await cmdHack(chatId, { reply_to_message: null }, fullName); break;
       case 'joke': await tg('sendMessage', { chat_id: chatId, text: pick(jokes) }); break;
       case 'fortune': await tg('sendMessage', { chat_id: chatId, text: pick(fortunes) }); break;
+      case 'dice': await cmdDice(chatId); break;
+      case 'coinflip': await cmdCoinFlip(chatId); break;
     }
   }
 }
