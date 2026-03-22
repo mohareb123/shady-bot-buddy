@@ -454,6 +454,21 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/addcoins': return await cmdAddCoins(supabase, chatId, userId, msg, parts);
     case '/addpoints': return await cmdAddPoints(supabase, chatId, userId, msg, parts);
     case '/resetwarns': return await cmdResetWarns(supabase, chatId, userId, msg);
+    // New commands
+    case '/call': return await cmdCallAll(supabase, chatId, userId);
+    case '/tagall': return await cmdCallAll(supabase, chatId, userId);
+    case '/pin': return await cmdPin(chatId, userId, msg);
+    case '/unpin': return await cmdUnpin(chatId, userId, msg);
+    case '/id': return await cmdId(chatId, msg);
+    case '/info': return await cmdInfo(supabase, chatId, msg);
+    case '/rules': return await cmdRules(supabase, chatId);
+    case '/setrules': return await cmdSetRules(supabase, chatId, userId, text);
+    case '/demote': return await cmdDemote(supabase, msg, chatId, userId, fullName);
+    case '/unban': return await cmdUnban(supabase, msg, chatId, userId, fullName);
+    case '/help': return await cmdHelp(chatId);
+    case '/report': return await cmdReport(chatId, userId, msg, fullName);
+    case '/dice': return await cmdDice(chatId);
+    case '/coinflip': return await cmdCoinFlip(chatId);
   }
 }
 
@@ -1066,7 +1081,161 @@ async function cmdResetWarns(supabase: any, chatId: number, userId: number, msg:
   await tg('sendMessage', { chat_id: chatId, text: `✅ تم إزالة جميع تحذيرات ${target.name}` });
 }
 
-// ============ LINK PROTECTION ============
+// ============ NEW COMMANDS ============
+
+async function cmdCallAll(supabase: any, chatId: number, userId: number) {
+  if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
+  const { data: members } = await supabase.from('members')
+    .select('full_name, username, user_id').eq('chat_id', chatId);
+  if (!members?.length) return tg('sendMessage', { chat_id: chatId, text: '❌ لا يوجد أعضاء' });
+  
+  // Split into chunks of 5 to avoid message length limits
+  const chunks: string[][] = [];
+  for (let i = 0; i < members.length; i += 5) {
+    chunks.push(members.slice(i, i + 5).map((m: any) => {
+      if (m.username) return `@${m.username}`;
+      return `[${m.full_name || m.user_id}](tg://user?id=${m.user_id})`;
+    }));
+  }
+  
+  for (const chunk of chunks) {
+    await tg('sendMessage', { chat_id: chatId, text: `📢 ${chunk.join(' ')}`, parse_mode: 'Markdown' });
+  }
+}
+
+async function cmdPin(chatId: number, userId: number, msg: any) {
+  if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
+  if (!msg.reply_to_message) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على الرسالة المراد تثبيتها' });
+  await tg('pinChatMessage', { chat_id: chatId, message_id: msg.reply_to_message.message_id });
+  await tg('sendMessage', { chat_id: chatId, text: '📌 تم تثبيت الرسالة' });
+}
+
+async function cmdUnpin(chatId: number, userId: number, msg: any) {
+  if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
+  if (msg.reply_to_message) {
+    await tg('unpinChatMessage', { chat_id: chatId, message_id: msg.reply_to_message.message_id });
+  } else {
+    await tg('unpinAllChatMessages', { chat_id: chatId });
+  }
+  await tg('sendMessage', { chat_id: chatId, text: '📌 تم إلغاء التثبيت' });
+}
+
+async function cmdId(chatId: number, msg: any) {
+  const target = msg.reply_to_message?.from || msg.from;
+  const name = `${target.first_name || ''} ${target.last_name || ''}`.trim();
+  await tg('sendMessage', {
+    chat_id: chatId,
+    text: `🆔 *معلومات المعرف*\n\n👤 الاسم: ${name}\n🔢 المعرف: \`${target.id}\`\n📛 اليوزر: ${target.username ? '@' + target.username : 'لا يوجد'}\n💬 معرف المجموعة: \`${chatId}\``,
+    parse_mode: 'Markdown',
+  });
+}
+
+async function cmdInfo(supabase: any, chatId: number, msg: any) {
+  const targetId = msg.reply_to_message ? msg.reply_to_message.from.id : msg.from.id;
+  const targetFrom = msg.reply_to_message?.from || msg.from;
+  const name = `${targetFrom.first_name || ''} ${targetFrom.last_name || ''}`.trim();
+  
+  const { data: member } = await supabase.from('members')
+    .select('*').eq('user_id', targetId).eq('chat_id', chatId).single();
+  const { data: title } = await supabase.from('user_titles')
+    .select('title').eq('user_id', targetId).eq('chat_id', chatId).single();
+  
+  const memberRes = await tg('getChatMember', { chat_id: chatId, user_id: targetId });
+  const status = memberRes.result?.status || 'unknown';
+  const statusMap: Record<string, string> = { creator: '👑 مالك', administrator: '⭐ مشرف', member: '👤 عضو', restricted: '🔇 مقيد', left: '🚪 غادر', kicked: '🚫 محظور' };
+  
+  let text = `ℹ️ *معلومات ${name}*\n\n`;
+  text += `🔢 المعرف: \`${targetId}\`\n`;
+  text += `📛 اليوزر: ${targetFrom.username ? '@' + targetFrom.username : 'لا يوجد'}\n`;
+  text += `📊 الحالة: ${statusMap[status] || status}\n`;
+  if (title) text += `🏷️ اللقب: ${title.title}\n`;
+  if (member) {
+    text += `\n⭐ المستوى: ${member.level}\n`;
+    text += `💎 النقاط: ${member.points}\n`;
+    text += `💰 العملات: ${member.coins}\n`;
+    text += `💬 الرسائل: ${member.messages_count}\n`;
+    text += `⚠️ التحذيرات: ${member.warnings}\n`;
+    text += `📅 تاريخ الانضمام: ${new Date(member.join_date).toLocaleDateString('ar-EG')}`;
+  }
+  
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+}
+
+async function cmdRules(supabase: any, chatId: number) {
+  const { data: settings } = await supabase.from('group_settings')
+    .select('rules').eq('chat_id', chatId).single();
+  const rules = settings?.rules || 'لم يتم تعيين قوانين بعد. استخدم /setrules لتعيينها.';
+  await tg('sendMessage', { chat_id: chatId, text: `📜 *قوانين المجموعة*\n\n${rules}`, parse_mode: 'Markdown' });
+}
+
+async function cmdSetRules(supabase: any, chatId: number, userId: number, text: string) {
+  if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
+  const rules = text.replace(/\/setrules\s*/, '').trim();
+  if (!rules) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /setrules القوانين' });
+  await supabase.from('group_settings').update({ rules }).eq('chat_id', chatId);
+  await tg('sendMessage', { chat_id: chatId, text: '✅ تم تحديث قوانين المجموعة' });
+}
+
+async function cmdDemote(supabase: any, msg: any, chatId: number, userId: number, fullName: string) {
+  if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو' });
+  await tg('promoteChatMember', {
+    chat_id: chatId, user_id: target.id,
+    can_manage_chat: false, can_delete_messages: false, can_restrict_members: false,
+    can_promote_members: false, can_change_info: false, can_invite_users: false,
+    can_pin_messages: false, can_manage_video_chats: false,
+  });
+  await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'demote');
+  await tg('sendMessage', { chat_id: chatId, text: `⬇️ تم تنزيل ${target.name} من الإشراف بواسطة ${fullName}` });
+}
+
+async function cmdUnban(supabase: any, msg: any, chatId: number, userId: number, fullName: string) {
+  if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
+  const target = await getTarget(msg);
+  if (!target) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة العضو أو استخدم المعرف' });
+  await tg('unbanChatMember', { chat_id: chatId, user_id: target.id, only_if_banned: true });
+  await logAdminAction(supabase, chatId, userId, fullName, target.id, target.name, 'unban');
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم رفع الحظر عن ${target.name} بواسطة ${fullName}` });
+}
+
+async function cmdHelp(chatId: number) {
+  const text = `📋 *جميع أوامر شادي*\n\n` +
+    `*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر\n/stats - إحصائياتك\n/top - الترتيب\n\n` +
+    `*🎮 ألعاب:*\n/quiz - كويز\n/hack - اختراق وهمي\n/ship - توافق\n/8ball - كرة سحرية\n/fortune - حظك\n/joke - نكتة\n/roast - هجاية\n/compliment - مدح\n/wisdom - حكمة\n/judgment - أحكام\n/dice - نرد\n/coinflip - عملة\n\n` +
+    `*🤫 اجتماعي:*\n/whisper - همسة سرية\n/id - معرف المستخدم\n/info - معلومات تفصيلية\n/report - إبلاغ المشرفين\n\n` +
+    `*🛠️ إدارة:*\n/ban /unban /kick /mute /unmute\n/warn /promote /demote\n/pin /unpin - تثبيت الرسائل\n/call /tagall - مناداة الجميع\n/settings - الإعدادات\n/rules - القوانين\n/setrules - تعيين القوانين\n/addresponse - إضافة رد\n/responses - الردود\n/calc - آلة حاسبة`;
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+}
+
+async function cmdReport(chatId: number, userId: number, msg: any, fullName: string) {
+  if (!msg.reply_to_message) return tg('sendMessage', { chat_id: chatId, text: '❌ رد على رسالة الشخص المراد الإبلاغ عنه' });
+  const targetName = `${msg.reply_to_message.from.first_name || ''}`.trim();
+  const res = await tg('getChatAdministrators', { chat_id: chatId });
+  if (!res.result) return;
+  const adminMentions = res.result.map((a: any) => {
+    if (a.user.username) return `@${a.user.username}`;
+    return `[${a.user.first_name}](tg://user?id=${a.user.id})`;
+  }).join(' ');
+  await tg('sendMessage', {
+    chat_id: chatId,
+    text: `🚨 *بلاغ جديد*\n\n👤 المُبلّغ: ${fullName}\n🎯 المُبلّغ عنه: ${targetName}\n\n📢 المشرفين: ${adminMentions}`,
+    parse_mode: 'Markdown',
+    reply_to_message_id: msg.reply_to_message.message_id,
+  });
+}
+
+async function cmdDice(chatId: number) {
+  const dice1 = Math.floor(Math.random() * 6) + 1;
+  const dice2 = Math.floor(Math.random() * 6) + 1;
+  const diceEmojis = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+  await tg('sendMessage', { chat_id: chatId, text: `🎲 *رمي النرد*\n\n${diceEmojis[dice1-1]} ${diceEmojis[dice2-1]}\n\nالنتيجة: *${dice1 + dice2}* (${dice1} + ${dice2})`, parse_mode: 'Markdown' });
+}
+
+async function cmdCoinFlip(chatId: number) {
+  const result = Math.random() < 0.5;
+  await tg('sendMessage', { chat_id: chatId, text: `🪙 *رمي العملة*\n\n${result ? '🟡 طرة (رأس)' : '⚪ نقش (كتابة)'}`, parse_mode: 'Markdown' });
+}
 
 async function checkLinks(supabase: any, msg: any, chatId: number, userId: number, fullName: string): Promise<boolean> {
   const { data: settings } = await supabase.from('group_settings')
@@ -1245,11 +1414,7 @@ async function handleCallbackQuery(supabase: any, query: any) {
     switch (menu) {
       case 'commands':
         await tg('answerCallbackQuery', { callback_query_id: query.id });
-        await tg('sendMessage', {
-          chat_id: chatId,
-          text: `📋 *أوامر شادي*\n\n*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر\n/stats - إحصائياتك\n/top - الترتيب\n\n*🎮 ألعاب:*\n/quiz - كويز\n/hack - اختراق وهمي\n/ship - توافق\n/8ball - كرة سحرية\n/fortune - حظك\n/joke - نكتة\n/roast - هجاية\n/compliment - مدح\n/wisdom - حكمة\n/judgment - أحكام\n\n*🤫 اجتماعي:*\n/whisper - همسة سرية\n\n*🛠️ إدارة:*\n/ban /kick /mute /unmute /warn /promote\n/settings - الإعدادات\n/addresponse - إضافة رد\n/responses - الردود\n/calc - آلة حاسبة`,
-          parse_mode: 'Markdown',
-        });
+        await cmdHelp(chatId);
         break;
       case 'stats':
         await tg('answerCallbackQuery', { callback_query_id: query.id });
@@ -1265,6 +1430,7 @@ async function handleCallbackQuery(supabase: any, query: any) {
               [{ text: '🧠 كويز', callback_data: 'game_quiz' }, { text: '💻 اختراق', callback_data: 'game_hack' }],
               [{ text: '💘 توافق', callback_data: 'game_ship' }, { text: '🎱 كرة سحرية', callback_data: 'game_8ball' }],
               [{ text: '😂 نكتة', callback_data: 'game_joke' }, { text: '🔮 حظك', callback_data: 'game_fortune' }],
+              [{ text: '🎲 نرد', callback_data: 'game_dice' }, { text: '🪙 عملة', callback_data: 'game_coinflip' }],
             ]
           },
         });
@@ -1294,6 +1460,8 @@ async function handleCallbackQuery(supabase: any, query: any) {
       case 'hack': await cmdHack(chatId, { reply_to_message: null }, fullName); break;
       case 'joke': await tg('sendMessage', { chat_id: chatId, text: pick(jokes) }); break;
       case 'fortune': await tg('sendMessage', { chat_id: chatId, text: pick(fortunes) }); break;
+      case 'dice': await cmdDice(chatId); break;
+      case 'coinflip': await cmdCoinFlip(chatId); break;
     }
   }
 }

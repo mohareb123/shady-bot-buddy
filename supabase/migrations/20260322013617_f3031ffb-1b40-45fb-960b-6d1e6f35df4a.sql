@@ -1,0 +1,1 @@
+ALTER TABLE public.group_settings ADD COLUMN IF NOT EXISTS rules text DEFAULT NULL;

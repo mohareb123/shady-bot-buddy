@@ -84,6 +84,7 @@ export type Database = {
           links_allowed: boolean
           max_warnings: number
           media_allowed: boolean
+          rules: string | null
           spam_protection: boolean
           welcome_enabled: boolean
         }
@@ -93,6 +94,7 @@ export type Database = {
           links_allowed?: boolean
           max_warnings?: number
           media_allowed?: boolean
+          rules?: string | null
           spam_protection?: boolean
           welcome_enabled?: boolean
         }
@@ -102,6 +104,7 @@ export type Database = {
           links_allowed?: boolean
           max_warnings?: number
           media_allowed?: boolean
+          rules?: string | null
           spam_protection?: boolean
           welcome_enabled?: boolean
         }

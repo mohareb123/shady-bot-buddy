@@ -30,8 +30,7 @@ export default function ResponsesPage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["auto-responses"] });
-      setTrigger("");
-      setResponse("");
+      setTrigger(""); setResponse("");
       toast.success("تم إضافة الرد التلقائي");
     },
   });
@@ -55,11 +54,11 @@ export default function ResponsesPage() {
         </div>
 
         <Card>
-          <CardContent className="p-6">
-            <div className="flex gap-3">
-              <Input placeholder="الكلمة المفتاحية" value={trigger} onChange={(e) => setTrigger(e.target.value)} className="flex-1" />
-              <Input placeholder="الرد" value={response} onChange={(e) => setResponse(e.target.value)} className="flex-[2]" />
-              <Button onClick={() => addMutation.mutate()} disabled={!trigger || !response}>
+          <CardContent className="p-4 md:p-6 space-y-3">
+            <div className="flex flex-col sm:flex-row gap-3">
+              <Input placeholder="الكلمة المفتاحية" value={trigger} onChange={(e) => setTrigger(e.target.value)} className="sm:flex-1" />
+              <Input placeholder="الرد" value={response} onChange={(e) => setResponse(e.target.value)} className="sm:flex-[2]" />
+              <Button onClick={() => addMutation.mutate()} disabled={!trigger || !response} className="shrink-0">
                 <Plus className="w-4 h-4 ml-2" /> إضافة
               </Button>
             </div>
@@ -72,24 +71,20 @@ export default function ResponsesPage() {
           ) : responses && responses.length > 0 ? (
             responses.map((r: any) => (
               <Card key={r.id}>
-                <CardContent className="p-4 flex items-center justify-between">
-                  <div>
+                <CardContent className="p-4 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
                     <span className="font-medium text-foreground">🔑 {r.trigger_word}</span>
-                    <span className="mx-3 text-muted-foreground">→</span>
-                    <span className="text-muted-foreground">{r.response}</span>
+                    <span className="mx-2 text-muted-foreground">→</span>
+                    <span className="text-muted-foreground break-words">{r.response}</span>
                   </div>
-                  <Button variant="ghost" size="icon" onClick={() => deleteMutation.mutate(r.id)}>
+                  <Button variant="ghost" size="icon" className="shrink-0" onClick={() => deleteMutation.mutate(r.id)}>
                     <Trash2 className="w-4 h-4 text-destructive" />
                   </Button>
                 </CardContent>
               </Card>
             ))
           ) : (
-            <Card>
-              <CardContent className="p-8 text-center text-muted-foreground">
-                لا توجد ردود تلقائية
-              </CardContent>
-            </Card>
+            <Card><CardContent className="p-8 text-center text-muted-foreground">لا توجد ردود تلقائية</CardContent></Card>
           )}
         </div>
       </div>
