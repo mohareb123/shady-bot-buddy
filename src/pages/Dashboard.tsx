@@ -1,47 +1,64 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Users, MessageSquare, Settings, Shield } from "lucide-react";
 
 export default function Dashboard() {
+  const { isDeveloper, userChatId } = useAuth();
+
+  const buildFilter = (query: any) => {
+    if (!isDeveloper && userChatId) return query.eq("chat_id", userChatId);
+    return query;
+  };
+
   const { data: membersCount } = useQuery({
-    queryKey: ["members-count"],
+    queryKey: ["members-count", userChatId, isDeveloper],
     queryFn: async () => {
-      const { count } = await supabase.from("members").select("*", { count: "exact", head: true });
+      let q = supabase.from("members").select("*", { count: "exact", head: true });
+      q = buildFilter(q);
+      const { count } = await q;
       return count || 0;
     },
   });
 
   const { data: messagesCount } = useQuery({
-    queryKey: ["messages-count"],
+    queryKey: ["messages-count", userChatId, isDeveloper],
     queryFn: async () => {
-      const { count } = await supabase.from("messages_log").select("*", { count: "exact", head: true });
+      let q = supabase.from("messages_log").select("*", { count: "exact", head: true });
+      q = buildFilter(q);
+      const { count } = await q;
       return count || 0;
     },
   });
 
   const { data: groupsCount } = useQuery({
-    queryKey: ["groups-count"],
+    queryKey: ["groups-count", userChatId, isDeveloper],
     queryFn: async () => {
-      const { count } = await supabase.from("group_settings").select("*", { count: "exact", head: true });
+      let q = supabase.from("group_settings").select("*", { count: "exact", head: true });
+      q = buildFilter(q);
+      const { count } = await q;
       return count || 0;
     },
   });
 
   const { data: logsCount } = useQuery({
-    queryKey: ["logs-count"],
+    queryKey: ["logs-count", userChatId, isDeveloper],
     queryFn: async () => {
-      const { count } = await supabase.from("admin_logs").select("*", { count: "exact", head: true });
+      let q = supabase.from("admin_logs").select("*", { count: "exact", head: true });
+      q = buildFilter(q);
+      const { count } = await q;
       return count || 0;
     },
   });
 
   const { data: recentLogs } = useQuery({
-    queryKey: ["recent-logs"],
+    queryKey: ["recent-logs", userChatId, isDeveloper],
     queryFn: async () => {
-      const { data } = await supabase.from("admin_logs")
-        .select("*").order("timestamp", { ascending: false }).limit(10);
+      let q = supabase.from("admin_logs").select("*").order("timestamp", { ascending: false }).limit(10);
+      q = buildFilter(q);
+      const { data } = await q;
       return data || [];
     },
   });
@@ -58,7 +75,9 @@ export default function Dashboard() {
       <div className="space-y-8">
         <div>
           <h2 className="text-2xl font-bold text-foreground">لوحة التحكم</h2>
-          <p className="text-muted-foreground mt-1">نظرة عامة على نشاط بوت شادي</p>
+          <p className="text-muted-foreground mt-1">
+            {isDeveloper ? "نظرة عامة على جميع المجموعات" : "نظرة عامة على مجموعتك"}
+          </p>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
