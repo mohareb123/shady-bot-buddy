@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      achievements: {
+        Row: {
+          description: string
+          icon: string
+          id: string
+          name: string
+          required_value: number | null
+        }
+        Insert: {
+          description: string
+          icon: string
+          id: string
+          name: string
+          required_value?: number | null
+        }
+        Update: {
+          description?: string
+          icon?: string
+          id?: string
+          name?: string
+          required_value?: number | null
+        }
+        Relationships: []
+      }
       admin_logs: {
         Row: {
           action: string
@@ -50,6 +74,27 @@ export type Database = {
         }
         Relationships: []
       }
+      afk_status: {
+        Row: {
+          chat_id: number
+          reason: string | null
+          since: string | null
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          reason?: string | null
+          since?: string | null
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          reason?: string | null
+          since?: string | null
+          user_id?: number
+        }
+        Relationships: []
+      }
       auto_responses: {
         Row: {
           chat_id: number
@@ -74,6 +119,60 @@ export type Database = {
           id?: string
           response?: string
           trigger_word?: string
+        }
+        Relationships: []
+      }
+      dashboard_links: {
+        Row: {
+          chat_id: number
+          chat_title: string | null
+          code: string
+          created_at: string | null
+          id: string
+          used: boolean | null
+        }
+        Insert: {
+          chat_id: number
+          chat_title?: string | null
+          code: string
+          created_at?: string | null
+          id?: string
+          used?: boolean | null
+        }
+        Update: {
+          chat_id?: number
+          chat_title?: string | null
+          code?: string
+          created_at?: string | null
+          id?: string
+          used?: boolean | null
+        }
+        Relationships: []
+      }
+      dashboard_users: {
+        Row: {
+          chat_id: number
+          created_at: string | null
+          display_name: string | null
+          id: string
+          is_developer: boolean | null
+          user_id: string
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_developer?: boolean | null
+          user_id: string
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_developer?: boolean | null
+          user_id?: string
         }
         Relationships: []
       }
@@ -110,10 +209,94 @@ export type Database = {
         }
         Relationships: []
       }
+      lottery_entries: {
+        Row: {
+          chat_id: number
+          created_at: string | null
+          id: string
+          round_id: string
+          tickets: number | null
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string | null
+          id?: string
+          round_id: string
+          tickets?: number | null
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string | null
+          id?: string
+          round_id?: string
+          tickets?: number | null
+          user_id?: number
+        }
+        Relationships: []
+      }
+      member_achievements: {
+        Row: {
+          achievement_id: string
+          chat_id: number
+          unlocked_at: string | null
+          user_id: number
+        }
+        Insert: {
+          achievement_id: string
+          chat_id: number
+          unlocked_at?: string | null
+          user_id: number
+        }
+        Update: {
+          achievement_id?: string
+          chat_id?: number
+          unlocked_at?: string | null
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "member_achievements_achievement_id_fkey"
+            columns: ["achievement_id"]
+            isOneToOne: false
+            referencedRelation: "achievements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      member_reputation: {
+        Row: {
+          chat_id: number
+          created_at: string | null
+          from_user_id: number
+          id: string
+          to_user_id: number
+          value: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string | null
+          from_user_id: number
+          id?: string
+          to_user_id: number
+          value: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string | null
+          from_user_id?: number
+          id?: string
+          to_user_id?: number
+          value?: number
+        }
+        Relationships: []
+      }
       members: {
         Row: {
           chat_id: number
           coins: number
+          daily_streak: number | null
           full_name: string | null
           join_date: string
           last_active: string
@@ -121,6 +304,9 @@ export type Database = {
           level: number
           messages_count: number
           points: number
+          quiz_correct: number | null
+          reputation: number | null
+          total_gifted: number | null
           user_id: number
           username: string | null
           warnings: number
@@ -128,6 +314,7 @@ export type Database = {
         Insert: {
           chat_id: number
           coins?: number
+          daily_streak?: number | null
           full_name?: string | null
           join_date?: string
           last_active?: string
@@ -135,6 +322,9 @@ export type Database = {
           level?: number
           messages_count?: number
           points?: number
+          quiz_correct?: number | null
+          reputation?: number | null
+          total_gifted?: number | null
           user_id: number
           username?: string | null
           warnings?: number
@@ -142,6 +332,7 @@ export type Database = {
         Update: {
           chat_id?: number
           coins?: number
+          daily_streak?: number | null
           full_name?: string | null
           join_date?: string
           last_active?: string
@@ -149,6 +340,9 @@ export type Database = {
           level?: number
           messages_count?: number
           points?: number
+          quiz_correct?: number | null
+          reputation?: number | null
+          total_gifted?: number | null
           user_id?: number
           username?: string | null
           warnings?: number
@@ -206,6 +400,65 @@ export type Database = {
         }
         Relationships: []
       }
+      poll_votes: {
+        Row: {
+          id: string
+          option_index: number
+          poll_id: string
+          user_id: number
+        }
+        Insert: {
+          id?: string
+          option_index: number
+          poll_id: string
+          user_id: number
+        }
+        Update: {
+          id?: string
+          option_index?: number
+          poll_id?: string
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "poll_votes_poll_id_fkey"
+            columns: ["poll_id"]
+            isOneToOne: false
+            referencedRelation: "polls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      polls: {
+        Row: {
+          chat_id: number
+          created_at: string | null
+          created_by: number
+          id: string
+          is_active: boolean | null
+          options: Json
+          question: string
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string | null
+          created_by: number
+          id?: string
+          is_active?: boolean | null
+          options?: Json
+          question: string
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string | null
+          created_by?: number
+          id?: string
+          is_active?: boolean | null
+          options?: Json
+          question?: string
+        }
+        Relationships: []
+      }
       quiz_questions: {
         Row: {
           answer: string
@@ -227,6 +480,36 @@ export type Database = {
           id?: string
           options?: Json
           question?: string
+        }
+        Relationships: []
+      }
+      reminders: {
+        Row: {
+          chat_id: number
+          created_at: string | null
+          id: string
+          is_sent: boolean | null
+          message: string
+          remind_at: string
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string | null
+          id?: string
+          is_sent?: boolean | null
+          message: string
+          remind_at: string
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string | null
+          id?: string
+          is_sent?: boolean | null
+          message?: string
+          remind_at?: string
+          user_id?: number
         }
         Relationships: []
       }
