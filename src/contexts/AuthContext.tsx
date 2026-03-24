@@ -84,7 +84,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (email: string, password: string, linkCode: string): Promise<{ success: boolean; error?: string }> => {
     // First sign up
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+    const { data: authData, error: authError } = await (supabase.auth as any).signUp({ email, password });
     if (authError) return { success: false, error: authError.message };
     if (!authData.user) return { success: false, error: "فشل إنشاء الحساب" };
 
