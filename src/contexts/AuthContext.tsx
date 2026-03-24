@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    supabase.auth.signOut();
+    (supabase.auth as any).signOut();
     setIsAuthenticated(false);
     setIsDeveloper(false);
     setUserChatId(null);
