@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Check Supabase session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    (supabase.auth as any).getSession().then(({ data: { session } }: any) => {
       if (session?.user) {
         setIsAuthenticated(true);
         setUserId(session.user.id);
