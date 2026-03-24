@@ -334,11 +334,22 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
+    // Check if link code is valid (pre-check before signup)
+    if (body.action === 'check_link_code') {
+      const supabase = getSupabase();
+      const code = (body.code || '').trim().toUpperCase();
+      const { data } = await supabase.from('dashboard_links')
+        .select('id, chat_title').eq('code', code).eq('used', false).single();
+      if (!data) return new Response(JSON.stringify({ ok: false, error: 'رمز غير صالح' }), { headers: corsHeaders });
+      return new Response(JSON.stringify({ ok: true, chat_title: data.chat_title }), { headers: corsHeaders });
+    }
+
     // Handle link code verification from dashboard
     if (body.action === 'verify_link_code') {
       const supabase = getSupabase();
+      const code = (body.code || '').trim().toUpperCase();
       const { data } = await supabase.from('dashboard_links')
-        .select('*').eq('code', body.code).eq('used', false).single();
+        .select('*').eq('code', code).eq('used', false).single();
       if (!data) return new Response(JSON.stringify({ ok: false, error: 'رمز غير صالح' }), { headers: corsHeaders });
       await supabase.from('dashboard_links').update({ used: true }).eq('id', data.id);
       await supabase.from('dashboard_users').insert({
