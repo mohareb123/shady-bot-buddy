@@ -442,7 +442,14 @@ Deno.serve(async (req) => {
     }
 
     // Smart responses (AI-powered)
-    const shouldReply = isPrivate || text.toLowerCase().includes('شادي') || Math.random() < 0.07;
+    // Detect if user is replying to one of Shady's messages
+    const isReplyToBot = msg.reply_to_message ? await isBotMessage(supabase, chatId, msg.reply_to_message.message_id) : false;
+    
+    // Improved trigger: reply to bot, private, mentions شادي, or smart detection of conversational intent
+    const mentionsShady = text.toLowerCase().includes('شادي') || text.toLowerCase().includes('shady');
+    const isQuestion = text.includes('؟') || text.endsWith('?');
+    const startsWithYa = /^(يا\s|ي\s)/.test(text.trim());
+    const shouldReply = isPrivate || isReplyToBot || mentionsShady || startsWithYa || (isQuestion && Math.random() < 0.3) || Math.random() < 0.05;
 
     if (shouldReply && canReply(chatId)) {
       const lowerText = text.toLowerCase();
@@ -453,11 +460,24 @@ Deno.serve(async (req) => {
       } else if (lowerText.includes('كويز') || lowerText.includes('اختبار')) {
         await sendQuiz(supabase, chatId);
       } else {
+        // Load conversation history for context
+        const history = await loadConversationHistory(supabase, chatId, userId);
         const hasReplyTarget = !!msg.reply_to_message;
         const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin);
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history);
+        
+        // Save conversation to memory
+        await saveConversationMessage(supabase, chatId, userId, 'user', text);
+        
         if (aiResult.action) await executeAIAction(supabase, aiResult.action, msg, chatId, userId, fullName);
-        if (aiResult.text) await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+        if (aiResult.text) {
+          const sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          // Track bot's message for reply detection
+          if (sent?.result?.message_id) {
+            await trackBotMessage(supabase, chatId, sent.result.message_id);
+          }
+          await saveConversationMessage(supabase, chatId, userId, 'assistant', aiResult.text);
+        }
       }
     }
 
