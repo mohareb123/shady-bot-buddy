@@ -97,7 +97,7 @@ const AI_TOOLS = [
   }
 ];
 
-async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false): Promise<{ text: string | null; action: any | null }> {
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = []): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
@@ -108,18 +108,23 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.
 إذا سألك سؤال ثقافي أو علمي أجب عليه بدقة.
 إذا طلب ترجمة نص ترجمه بدقة.
+لديك ذاكرة للمحادثات السابقة مع المستخدم. استخدمها لتكون أكثر طبيعية.
 ${isAdminOrDev ? `
 المستخدم الحالي مشرف/مطور وله صلاحيات كاملة.
 إذا طلب منك تنفيذ إجراء إداري (حذف رسالة، طرد، حظر، كتم، تحذير، فك كتم، ترقية، إضافة عملات/نقاط، إزالة تحذيرات، تثبيت، إلغاء تثبيت) استخدم أداة execute_action.
 ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّذ الإجراء عليه.' : 'لا يوجد رد على رسالة. إذا طلب إجراء على شخص أخبره يرد على رسالة الشخص المستهدف.'}
 ` : 'المستخدم ليس مشرفاً. إذا طلب إجراء إداري أخبره أنه يحتاج صلاحيات مشرف.'}`;
 
+    const messages: any[] = [{ role: 'system', content: systemPrompt }];
+    // Add conversation history (last 10 messages)
+    if (conversationHistory.length > 0) {
+      messages.push(...conversationHistory.slice(-10));
+    }
+    messages.push({ role: 'user', content: text });
+
     const body: any = {
       model: 'google/gemini-3-flash-preview',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: text }
-      ],
+      messages,
     };
 
     if (isAdminOrDev) {
@@ -148,6 +153,36 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
 
     return { text: choice?.message?.content || null, action: null };
   } catch { return { text: null, action: null }; }
+}
+
+// ============ CONVERSATION MEMORY ============
+async function loadConversationHistory(supabase: any, chatId: number, userId: number): Promise<any[]> {
+  const { data } = await supabase.from('conversation_memory')
+    .select('role, content')
+    .eq('chat_id', chatId).eq('user_id', userId)
+    .order('created_at', { ascending: true })
+    .limit(10);
+  return data || [];
+}
+
+async function saveConversationMessage(supabase: any, chatId: number, userId: number, role: string, content: string) {
+  await supabase.from('conversation_memory').insert({ chat_id: chatId, user_id: userId, role, content });
+  // Keep only last 20 messages per user per chat
+  const { data: old } = await supabase.from('conversation_memory')
+    .select('id').eq('chat_id', chatId).eq('user_id', userId)
+    .order('created_at', { ascending: false }).range(20, 100);
+  if (old && old.length > 0) {
+    await supabase.from('conversation_memory').delete().in('id', old.map((r: any) => r.id));
+  }
+}
+
+async function trackBotMessage(supabase: any, chatId: number, messageId: number) {
+  await supabase.from('bot_messages').upsert({ chat_id: chatId, message_id: messageId }, { onConflict: 'message_id,chat_id' });
+}
+
+async function isBotMessage(supabase: any, chatId: number, messageId: number): Promise<boolean> {
+  const { data } = await supabase.from('bot_messages').select('message_id').eq('chat_id', chatId).eq('message_id', messageId).single();
+  return !!data;
 }
 
 async function executeAIAction(supabase: any, action: any, msg: any, chatId: number, userId: number, fullName: string) {
