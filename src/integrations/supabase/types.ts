@@ -122,6 +122,51 @@ export type Database = {
         }
         Relationships: []
       }
+      bot_messages: {
+        Row: {
+          chat_id: number
+          created_at: string
+          message_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          message_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          message_id?: number
+        }
+        Relationships: []
+      }
+      conversation_memory: {
+        Row: {
+          chat_id: number
+          content: string
+          created_at: string
+          id: string
+          role: string
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          content: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          content?: string
+          created_at?: string
+          id?: string
+          role?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
       dashboard_links: {
         Row: {
           chat_id: number
