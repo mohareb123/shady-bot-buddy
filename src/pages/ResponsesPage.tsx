@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,13 +11,16 @@ import { toast } from "sonner";
 
 export default function ResponsesPage() {
   const queryClient = useQueryClient();
+  const { isDeveloper, userChatId } = useAuth();
   const [trigger, setTrigger] = useState("");
   const [response, setResponse] = useState("");
 
   const { data: responses, isLoading } = useQuery({
-    queryKey: ["auto-responses"],
+    queryKey: ["auto-responses", userChatId, isDeveloper],
     queryFn: async () => {
-      const { data } = await supabase.from("auto_responses").select("*").order("created_at", { ascending: false });
+      let q = supabase.from("auto_responses").select("*").order("created_at", { ascending: false });
+      if (!isDeveloper && userChatId) q = q.eq("chat_id", userChatId);
+      const { data } = await q;
       return data || [];
     },
   });
@@ -24,7 +28,7 @@ export default function ResponsesPage() {
   const addMutation = useMutation({
     mutationFn: async () => {
       const { error } = await supabase.from("auto_responses").insert({
-        chat_id: 0, trigger_word: trigger, response, created_by: "لوحة التحكم",
+        chat_id: userChatId || 0, trigger_word: trigger, response, created_by: "لوحة التحكم",
       });
       if (error) throw error;
     },
@@ -50,7 +54,9 @@ export default function ResponsesPage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground">الردود التلقائية</h2>
-          <p className="text-muted-foreground mt-1">إدارة الردود التلقائية للبوت</p>
+          <p className="text-muted-foreground mt-1">
+            {isDeveloper ? "جميع الردود التلقائية" : "ردود مجموعتك التلقائية"}
+          </p>
         </div>
 
         <Card>

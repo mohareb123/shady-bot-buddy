@@ -32,7 +32,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Check Supabase session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    (supabase.auth as any).getSession().then(({ data: { session } }: any) => {
       if (session?.user) {
         setIsAuthenticated(true);
         setUserId(session.user.id);
@@ -40,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = (supabase.auth as any).onAuthStateChange((_event: any, session: any) => {
       if (session?.user) {
         setIsAuthenticated(true);
         setUserId(session.user.id);
@@ -77,14 +77,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const login = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    const { error } = await (supabase.auth as any).signInWithPassword({ email, password });
     if (error) return false;
     return true;
   };
 
   const register = async (email: string, password: string, linkCode: string): Promise<{ success: boolean; error?: string }> => {
     // First sign up
-    const { data: authData, error: authError } = await supabase.auth.signUp({ email, password });
+    const { data: authData, error: authError } = await (supabase.auth as any).signUp({ email, password });
     if (authError) return { success: false, error: authError.message };
     if (!authData.user) return { success: false, error: "فشل إنشاء الحساب" };
 
@@ -101,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = () => {
-    supabase.auth.signOut();
+    (supabase.auth as any).signOut();
     setIsAuthenticated(false);
     setIsDeveloper(false);
     setUserChatId(null);

@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function MembersPage() {
+  const { isDeveloper, userChatId } = useAuth();
+
   const { data: members, isLoading } = useQuery({
-    queryKey: ["members"],
+    queryKey: ["members", userChatId, isDeveloper],
     queryFn: async () => {
-      const { data } = await supabase.from("members")
-        .select("*").order("points", { ascending: false }).limit(100);
+      let q = supabase.from("members").select("*").order("points", { ascending: false }).limit(100);
+      if (!isDeveloper && userChatId) q = q.eq("chat_id", userChatId);
+      const { data } = await q;
       return data || [];
     },
   });
@@ -19,14 +23,15 @@ export default function MembersPage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground">الأعضاء</h2>
-          <p className="text-muted-foreground mt-1">قائمة أعضاء البوت ونقاطهم</p>
+          <p className="text-muted-foreground mt-1">
+            {isDeveloper ? "جميع الأعضاء في كل المجموعات" : "أعضاء مجموعتك"}
+          </p>
         </div>
 
         {isLoading ? (
           <p className="text-muted-foreground text-center">جاري التحميل...</p>
         ) : members && members.length > 0 ? (
           <>
-            {/* Desktop table */}
             <Card className="hidden md:block">
               <CardContent className="p-0 overflow-x-auto">
                 <table className="w-full text-sm">
@@ -58,7 +63,6 @@ export default function MembersPage() {
               </CardContent>
             </Card>
 
-            {/* Mobile cards */}
             <div className="md:hidden space-y-3">
               {members.map((m: any) => (
                 <Card key={`${m.user_id}-${m.chat_id}`}>

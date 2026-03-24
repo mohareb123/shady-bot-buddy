@@ -1,15 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Shield } from "lucide-react";
 
 export default function LogsPage() {
+  const { isDeveloper, userChatId } = useAuth();
+
   const { data: logs, isLoading } = useQuery({
-    queryKey: ["admin-logs"],
+    queryKey: ["admin-logs", userChatId, isDeveloper],
     queryFn: async () => {
-      const { data } = await supabase.from("admin_logs")
-        .select("*").order("timestamp", { ascending: false }).limit(100);
+      let q = supabase.from("admin_logs").select("*").order("timestamp", { ascending: false }).limit(100);
+      if (!isDeveloper && userChatId) q = q.eq("chat_id", userChatId);
+      const { data } = await q;
       return data || [];
     },
   });
@@ -19,7 +23,9 @@ export default function LogsPage() {
       <div className="space-y-6">
         <div>
           <h2 className="text-2xl font-bold text-foreground">سجلات الإدارة</h2>
-          <p className="text-muted-foreground mt-1">جميع الإجراءات الإدارية</p>
+          <p className="text-muted-foreground mt-1">
+            {isDeveloper ? "جميع الإجراءات الإدارية" : "إجراءات مجموعتك"}
+          </p>
         </div>
 
         {isLoading ? (
