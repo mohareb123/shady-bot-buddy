@@ -83,14 +83,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const register = async (email: string, password: string, linkCode: string): Promise<{ success: boolean; error?: string }> => {
-    // First sign up
+    const trimmedCode = linkCode.trim().toUpperCase();
+    
+    // Verify link code FIRST before creating account
+    const { data: checkData, error: checkError } = await supabase.functions.invoke("telegram-bot", {
+      body: { action: "check_link_code", code: trimmedCode },
+    });
+
+    if (checkError || !checkData?.ok) {
+      return { success: false, error: "رمز الربط غير صالح أو مستخدم بالفعل" };
+    }
+
+    // Now sign up
     const { data: authData, error: authError } = await (supabase.auth as any).signUp({ email, password });
     if (authError) return { success: false, error: authError.message };
     if (!authData.user) return { success: false, error: "فشل إنشاء الحساب" };
 
-    // Verify link code via edge function
+    // Verify and link
     const { data: linkData, error: linkError } = await supabase.functions.invoke("telegram-bot", {
-      body: { action: "verify_link_code", code: linkCode, user_id: authData.user.id, display_name: email.split("@")[0] },
+      body: { action: "verify_link_code", code: trimmedCode, user_id: authData.user.id, display_name: email.split("@")[0] },
     });
 
     if (linkError || !linkData?.ok) {
