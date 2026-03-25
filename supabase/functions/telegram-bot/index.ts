@@ -102,13 +102,16 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
 
-    const systemPrompt = `أنت بوت تليغرام اسمك "شادي". شخصيتك مرحة وظريفة وتحب المزاح.
-ترد بالعربية دائماً وبأسلوب شبابي. ردودك قصيرة (جملة أو جملتين كحد أقصى).
+    const systemPrompt = `أنت بوت تليغرام اسمك "شادي". شخصيتك مرحة وظريفة وتحب المزاح لكنك ذكي جداً.
+ترد بالعربية دائماً وبأسلوب شبابي. ردودك قصيرة (جملة أو جملتين كحد أقصى) إلا إذا طُلب منك شرح أو بحث.
 إذا حياك أحد رد بتحية لطيفة. إذا شكرك رد بتواضع. إذا سألك من أنت عرّف عن نفسك.
 إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.
-إذا سألك سؤال ثقافي أو علمي أجب عليه بدقة.
+إذا سألك سؤال ثقافي أو علمي أجب عليه بدقة ووضوح.
 إذا طلب ترجمة نص ترجمه بدقة.
+إذا طلب بحث عن موضوع أو شخص، قدم معلومات مفصلة ودقيقة.
+إذا طلب ملخص كتاب أو معلومات عنه، قدمها بشكل منظم.
 لديك ذاكرة للمحادثات السابقة مع المستخدم. استخدمها لتكون أكثر طبيعية.
+حلل سياق المحادثة لفهم نوايا المستخدم حتى لو لم يذكر اسمك مباشرة.
 ${isAdminOrDev ? `
 المستخدم الحالي مشرف/مطور وله صلاحيات كاملة.
 إذا طلب منك تنفيذ إجراء إداري (حذف رسالة، طرد، حظر، كتم، تحذير، فك كتم، ترقية، إضافة عملات/نقاط، إزالة تحذيرات، تثبيت، إلغاء تثبيت) استخدم أداة execute_action.
@@ -637,6 +640,18 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/gamble': return await cmdGamble(supabase, chatId, userId, parts);
     case '/steal': return await cmdSteal(supabase, chatId, userId, fullName, msg);
     case '/marry': return await cmdMarry(chatId, msg, fullName);
+    // ===== STORE & PAYMENT =====
+    case '/store': return await cmdStore(supabase, chatId);
+    case '/buy': return await cmdBuy(supabase, chatId, userId, fullName, parts, msg);
+    case '/my': return await cmdMy(supabase, chatId, userId);
+    case '/pay': return await cmdPay(supabase, chatId, userId, fullName, parts);
+    case '/confirm': return await cmdConfirm(supabase, chatId, userId, fullName, msg);
+    case '/activate': return await cmdActivate(supabase, chatId, userId, parts);
+    case '/pending': return await cmdPending(supabase, chatId, userId);
+    // ===== SEARCH =====
+    case '/search': return await cmdSearch(chatId, text);
+    case '/youtube': return await cmdYoutube(chatId, text);
+    case '/book': return await cmdBook(chatId, text);
   }
 }
 
@@ -647,13 +662,14 @@ async function cmdStart(chatId: number, isPrivate: boolean) {
     inline_keyboard: [
       [{ text: '📋 الأوامر', callback_data: 'menu_commands' }, { text: '📊 إحصائياتي', callback_data: 'menu_stats' }],
       [{ text: '🎮 الألعاب', callback_data: 'menu_games' }, { text: '🏆 الترتيب', callback_data: 'menu_top' }],
-      [{ text: '💰 محفظتي', callback_data: 'menu_wallet' }, { text: '🛒 المتجر', callback_data: 'menu_shop' }],
+      [{ text: '💰 محفظتي', callback_data: 'menu_wallet' }, { text: '🏪 المتجر', callback_data: 'menu_store' }],
       [{ text: '🏅 إنجازاتي', callback_data: 'menu_achievements' }, { text: '👤 بروفايلي', callback_data: 'menu_profile' }],
+      [{ text: '🔍 بحث', callback_data: 'menu_search' }, { text: '👜 حسابي', callback_data: 'menu_my' }],
     ]
   };
   await tg('sendMessage', {
     chat_id: chatId,
-    text: `🤖 *مرحباً! أنا شادي*\n\nبوت ذكي للمجموعات والمحادثات الخاصة!\n\n✨ نظام نقاط وعملات وإنجازات\n🎮 ألعاب ممتعة ومتنوعة\n🛡️ حماية متقدمة (فلود + روابط + raid)\n🧠 ذكاء اصطناعي متطور\n📊 إحصائيات وتحليلات\n🗳️ استطلاعات ويانصيب\n\nاختر من القائمة أدناه:`,
+    text: `🤖 *مرحباً! أنا شادي*\n\nبوت ذكي لإدارة المجموعات + منصة خدمات!\n\n✨ نظام نقاط وعملات وإنجازات\n🏪 متجر + نظام دفع (Orange Cash)\n🔍 بحث ويب + يوتيوب + كتب\n🎮 ألعاب ممتعة ومتنوعة\n🛡️ حماية متقدمة\n🧠 ذكاء اصطناعي متطور\n\nاختر من القائمة:`,
     parse_mode: 'Markdown',
     reply_markup: keyboard,
   });
@@ -1220,11 +1236,13 @@ async function cmdUnban(supabase: any, msg: any, chatId: number, userId: number,
 
 async function cmdHelp(chatId: number) {
   const text = `📋 *جميع أوامر شادي*\n\n` +
-    `*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر\n/stats - إحصائياتك\n/top - الترتيب\n/gamble - قمار\n\n` +
+    `*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر القديم\n/stats - إحصائياتك\n/top - الترتيب\n/gamble - قمار\n\n` +
+    `*🏪 المتجر والدفع:*\n/store - عرض المنتجات\n/buy <رقم> - شراء بالعملات\n/pay <رقم> - شراء بالمال\n/confirm - تأكيد الدفع\n/my - حسابك ومشترياتك\n\n` +
+    `*🔍 البحث:*\n/search <سؤال> - بحث ويب\n/youtube <موضوع> - بحث يوتيوب\n/book <كتاب> - بحث كتب وملخصات\n\n` +
     `*🎮 ألعاب:*\n/quiz - كويز\n/hack - اختراق وهمي\n/ship - توافق\n/8ball - كرة سحرية\n/fortune - حظك\n/joke - نكتة\n/roast - هجاية\n/compliment - مدح\n/wisdom - حكمة\n/judgment - أحكام\n/dice - نرد\n/coinflip - عملة\n/challenge - تحدي\n/steal - سرقة\n/marry - زواج\n\n` +
     `*👤 ملف شخصي:*\n/profile - بروفايل كامل\n/achievements - إنجازاتك\n/rep +/- - تقييم سمعة\n/afk - وضع غير متاح\n/leaderboard - لوحة الصدارة\n\n` +
     `*🗳️ تفاعل:*\n/poll - استطلاع\n/lottery - يانصيب\n/remind - تذكير\n/translate - ترجمة\n/summary - ملخص\n/whisper - همسة\n\n` +
-    `*🛠️ إدارة:*\n/ban /unban /kick /mute /unmute\n/warn /promote /demote\n/pin /unpin /call /tagall\n/settings /rules /setrules\n/addresponse /responses /delresponse\n/report /slowmode /antiraid\n/linkdashboard - ربط لوحة التحكم\n/calc - آلة حاسبة`;
+    `*🛠️ إدارة:*\n/ban /unban /kick /mute /unmute\n/warn /promote /demote\n/pin /unpin /call /tagall\n/settings /rules /setrules\n/addresponse /responses /delresponse\n/report /slowmode /antiraid\n/linkdashboard - ربط لوحة التحكم`;
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
 }
 
@@ -1898,11 +1916,309 @@ async function handleCallbackQuery(supabase: any, query: any) {
       case 'top': await cmdTop(supabase, chatId); break;
       case 'wallet': await cmdWallet(supabase, chatId, userId); break;
       case 'shop': await cmdShop(chatId); break;
+      case 'store': await cmdStore(supabase, chatId); break;
+      case 'my': await cmdMy(supabase, chatId, userId); break;
       case 'achievements': await cmdAchievements(supabase, chatId, userId); break;
       case 'profile': await cmdProfile(supabase, chatId, userId, { reply_to_message: null, from: query.from }); break;
+      case 'search':
+        await tg('sendMessage', {
+          chat_id: chatId, text: '🔍 *أدوات البحث*\n\n🌐 /search <سؤال> — بحث ويب\n▶️ /youtube <موضوع> — بحث يوتيوب\n📚 /book <كتاب> — بحث كتب وملخصات',
+          parse_mode: 'Markdown',
+        });
+        break;
     }
     return;
+}
+
+// ============ STORE & PAYMENT SYSTEM ============
+
+const PAYMENT_NUMBER = '+201225556948';
+
+async function cmdStore(supabase: any, chatId: number) {
+  const { data: items } = await supabase.from('store_items').select('*').eq('is_active', true).order('category');
+  if (!items?.length) return tg('sendMessage', { chat_id: chatId, text: '❌ المتجر فارغ حالياً' });
+
+  let text = '🏪 *متجر شادي*\n\n';
+  let currentCat = '';
+  const catLabels: Record<string, string> = { moderation: '🛡️ إدارة', feature: '✨ مميزات', promotion: '📢 ترويج', subscription: '💎 اشتراكات', general: '🔷 عام' };
+
+  items.forEach((item: any, i: number) => {
+    if (item.category !== currentCat) {
+      currentCat = item.category;
+      text += `\n${catLabels[currentCat] || currentCat}\n`;
+    }
+    text += `${i + 1}. *${item.name}* — ${item.price_coins} عملة أو ${item.price_cash} جنيه\n   ${item.description || ''}\n`;
+  });
+
+  text += `\n💡 للشراء بالعملات: /buy <رقم>\n💳 للشراء بالمال: /pay <رقم>`;
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+}
+
+async function cmdBuy(supabase: any, chatId: number, userId: number, fullName: string, parts: string[], msg: any) {
+  const { data: items } = await supabase.from('store_items').select('*').eq('is_active', true).order('category');
+  if (!items?.length) return tg('sendMessage', { chat_id: chatId, text: '❌ المتجر فارغ' });
+
+  const idx = parseInt(parts[1]) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= items.length) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /buy <رقم المنتج من /store>' });
+
+  const item = items[idx];
+  const { data: member } = await supabase.from('members').select('coins').eq('user_id', userId).eq('chat_id', chatId).single();
+  if (!member || member.coins < item.price_coins) return tg('sendMessage', { chat_id: chatId, text: `❌ تحتاج ${item.price_coins} عملة (لديك ${member?.coins || 0})\n\n💳 أو ادفع ${item.price_cash} جنيه: /pay ${idx + 1}` });
+
+  await supabase.from('members').update({ coins: member.coins - item.price_coins }).eq('user_id', userId).eq('chat_id', chatId);
+
+  // Execute the service
+  await executeStoreItem(supabase, item, chatId, userId, fullName, msg);
+
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم شراء *${item.name}* بنجاح!\n💰 تم خصم ${item.price_coins} عملة`, parse_mode: 'Markdown' });
+}
+
+async function executeStoreItem(supabase: any, item: any, chatId: number, userId: number, fullName: string, msg: any) {
+  switch (item.category) {
+    case 'moderation':
+      if (item.name.includes('كتم')) {
+        await tg('restrictChatMember', {
+          chat_id: chatId, user_id: userId,
+          permissions: { can_send_messages: true, can_send_media_messages: true, can_send_other_messages: true, can_add_web_page_previews: true },
+        });
+      }
+      // unban handled manually by developer
+      break;
+    case 'feature':
+      if (item.name.includes('تثبيت') && msg.reply_to_message) {
+        await tg('pinChatMessage', { chat_id: chatId, message_id: msg.reply_to_message.message_id });
+      }
+      if (item.name.includes('لقب')) {
+        await tg('sendMessage', { chat_id: chatId, text: '💡 استخدم /buy_title <اللقب> لتحديد لقبك' });
+      }
+      break;
+    case 'subscription': {
+      const tier = item.name.includes('VIP') ? 'vip' : 'pro';
+      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+      await supabase.from('subscriptions').upsert({ user_id: userId, chat_id: chatId, tier, expires_at: expiresAt }, { onConflict: 'user_id,chat_id' });
+      break;
+    }
   }
+}
+
+async function cmdPay(supabase: any, chatId: number, userId: number, fullName: string, parts: string[]) {
+  const { data: items } = await supabase.from('store_items').select('*').eq('is_active', true).order('category');
+  if (!items?.length) return tg('sendMessage', { chat_id: chatId, text: '❌ المتجر فارغ' });
+
+  const idx = parseInt(parts[1]) - 1;
+  if (isNaN(idx) || idx < 0 || idx >= items.length) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /pay <رقم المنتج من /store>' });
+
+  const item = items[idx];
+
+  // Create payment request
+  await supabase.from('payment_requests').insert({
+    user_id: userId, chat_id: chatId, user_name: fullName,
+    service_type: item.name, service_details: item.id,
+    amount: item.price_cash,
+  });
+
+  await tg('sendMessage', {
+    chat_id: chatId,
+    text: `💳 *طلب دفع*\n\n🛒 المنتج: *${item.name}*\n💰 المبلغ: *${item.price_cash} جنيه*\n\n📱 رقم التحويل (Orange Cash):\n\`${PAYMENT_NUMBER}\`\n\n📋 *التعليمات:*\n1. حوّل المبلغ على الرقم أعلاه\n2. أرسل إثبات الدفع (صورة) هنا\n3. ثم اكتب /confirm\n\n⏰ سيتم تفعيل الخدمة بعد التحقق من الدفع`,
+    parse_mode: 'Markdown',
+  });
+}
+
+async function cmdConfirm(supabase: any, chatId: number, userId: number, fullName: string, msg: any) {
+  // Check if user has a pending payment
+  const { data: pending } = await supabase.from('payment_requests')
+    .select('*').eq('user_id', userId).eq('chat_id', chatId).eq('status', 'pending')
+    .order('created_at', { ascending: false }).limit(1).single();
+
+  if (!pending) return tg('sendMessage', { chat_id: chatId, text: '❌ لا يوجد طلب دفع معلّق. استخدم /pay أولاً' });
+
+  // Save proof (photo file_id if available)
+  let proofId = null;
+  if (msg.reply_to_message?.photo) {
+    proofId = msg.reply_to_message.photo[msg.reply_to_message.photo.length - 1].file_id;
+  } else if (msg.photo) {
+    proofId = msg.photo[msg.photo.length - 1].file_id;
+  }
+
+  await supabase.from('payment_requests').update({ status: 'awaiting_review', proof_file_id: proofId }).eq('id', pending.id);
+
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم إرسال طلب التأكيد!\n\n🔄 الحالة: في انتظار المراجعة\n📝 سيتم تفعيل الخدمة بعد التحقق\n\n🆔 رقم الطلب: \`${pending.id.substring(0, 8)}\``, parse_mode: 'Markdown' });
+
+  // Notify developer
+  await tg('sendMessage', {
+    chat_id: DEVELOPER_ID,
+    text: `💳 *طلب دفع جديد!*\n\n👤 من: ${fullName} (${userId})\n🛒 الخدمة: ${pending.service_type}\n💰 المبلغ: ${pending.amount} جنيه\n🆔 ID: \`${pending.id.substring(0, 8)}\`\n\nللتفعيل: /activate ${pending.id.substring(0, 8)}`,
+    parse_mode: 'Markdown',
+  });
+  // Forward proof photo to developer
+  if (proofId) {
+    await tg('sendPhoto', { chat_id: DEVELOPER_ID, photo: proofId, caption: `إثبات دفع من ${fullName}` });
+  }
+}
+
+async function cmdActivate(supabase: any, chatId: number, userId: number, parts: string[]) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+  const shortId = parts[1];
+  if (!shortId) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /activate <رقم_الطلب>' });
+
+  const { data: requests } = await supabase.from('payment_requests')
+    .select('*').or(`status.eq.pending,status.eq.awaiting_review`);
+
+  const req = requests?.find((r: any) => r.id.startsWith(shortId));
+  if (!req) return tg('sendMessage', { chat_id: chatId, text: '❌ طلب غير موجود' });
+
+  await supabase.from('payment_requests').update({ status: 'approved', resolved_at: new Date().toISOString(), resolved_by: userId }).eq('id', req.id);
+
+  // Execute the purchased service
+  const { data: item } = await supabase.from('store_items').select('*').eq('id', req.service_details).single();
+  if (item) {
+    await executeStoreItem(supabase, item, req.chat_id, req.user_id, req.user_name, {});
+  }
+
+  // Notify user
+  await tg('sendMessage', { chat_id: req.chat_id, text: `✅ تم تفعيل خدمة *${req.service_type}* لـ ${req.user_name}! 🎉\n\nشكراً لثقتك 💜`, parse_mode: 'Markdown' });
+  await tg('sendMessage', { chat_id: chatId, text: `✅ تم تفعيل الطلب ${shortId}` });
+}
+
+async function cmdPending(supabase: any, chatId: number, userId: number) {
+  if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
+
+  const { data: requests } = await supabase.from('payment_requests')
+    .select('*').or('status.eq.pending,status.eq.awaiting_review').order('created_at', { ascending: false }).limit(20);
+
+  if (!requests?.length) return tg('sendMessage', { chat_id: chatId, text: '✅ لا توجد طلبات معلقة' });
+
+  let text = '📋 *الطلبات المعلقة*\n\n';
+  requests.forEach((r: any) => {
+    text += `🆔 \`${r.id.substring(0, 8)}\`\n👤 ${r.user_name} | 💰 ${r.amount} جنيه\n🛒 ${r.service_type} | 📊 ${r.status}\n\n`;
+  });
+  text += '💡 /activate <id> للتفعيل';
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+}
+
+async function cmdMy(supabase: any, chatId: number, userId: number) {
+  const { data: member } = await supabase.from('members').select('coins, points, level').eq('user_id', userId).eq('chat_id', chatId).single();
+  const { data: sub } = await supabase.from('subscriptions').select('tier, expires_at').eq('user_id', userId).eq('chat_id', chatId).single();
+  const { data: purchases } = await supabase.from('payment_requests')
+    .select('service_type, amount, status, created_at').eq('user_id', userId).eq('chat_id', chatId).order('created_at', { ascending: false }).limit(5);
+
+  let text = `👤 *حسابك*\n\n`;
+  text += `💰 العملات: ${member?.coins || 0}\n💎 النقاط: ${member?.points || 0}\n⭐ المستوى: ${member?.level || 1}\n`;
+
+  if (sub && sub.tier !== 'free') {
+    const expires = new Date(sub.expires_at);
+    const isActive = expires > new Date();
+    text += `\n💎 الاشتراك: *${sub.tier.toUpperCase()}* ${isActive ? '✅' : '❌ منتهي'}\n`;
+    if (isActive) text += `📅 ينتهي: ${expires.toLocaleDateString('ar-EG')}\n`;
+  } else {
+    text += `\n💎 الاشتراك: Free\n`;
+  }
+
+  if (purchases?.length) {
+    text += `\n📜 *آخر المشتريات:*\n`;
+    purchases.forEach((p: any) => {
+      const status = p.status === 'approved' ? '✅' : p.status === 'awaiting_review' ? '🔄' : '⏳';
+      text += `${status} ${p.service_type} — ${p.amount} جنيه\n`;
+    });
+  }
+
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
+}
+
+// ============ SEARCH ENGINE ============
+
+async function cmdSearch(chatId: number, text: string) {
+  const query = text.replace(/\/search\s*/, '').trim();
+  if (!query) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /search <سؤالك أو موضوع البحث>' });
+
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح حالياً' });
+
+  await tg('sendMessage', { chat_id: chatId, text: '🔍 جاري البحث...' });
+
+  const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [
+        { role: 'system', content: `أنت محرك بحث ذكي. أجب عن استفسار المستخدم بمعلومات دقيقة ومحدّثة.
+قدم الإجابة في نقاط مرتبة ومختصرة. إذا كان السؤال عن شخص، قدم معلومات عنه.
+إذا كان عن موضوع تقني أو علمي، قدم شرحاً واضحاً.
+استخدم الإيموجي لتنظيم النتائج. اكتب بالعربية.
+في النهاية اكتب ملاحظة إذا كانت المعلومات قد تكون غير محدثة.` },
+        { role: 'user', content: query }
+      ],
+    }),
+  });
+  if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث. حاول مرة أخرى' });
+  const data = await res.json();
+  const result = data.choices?.[0]?.message?.content;
+  if (result) await tg('sendMessage', { chat_id: chatId, text: `🔍 *نتائج البحث:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+}
+
+async function cmdYoutube(chatId: number, text: string) {
+  const query = text.replace(/\/youtube\s*/, '').trim();
+  if (!query) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /youtube <ما تبحث عنه>' });
+
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح' });
+
+  await tg('sendMessage', { chat_id: chatId, text: '▶️ جاري البحث في يوتيوب...' });
+
+  const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [
+        { role: 'system', content: `أنت مساعد بحث يوتيوب. عند سؤالك عن موضوع:
+1. اقترح أفضل 5 فيديوهات يوتيوب مناسبة (عناوين حقيقية أو مقترحة)
+2. لكل فيديو: العنوان، القناة المقترحة، المدة التقريبية
+3. قدم ملخص سريع لما ستجده في هذه الفيديوهات
+4. اقترح كلمات بحث إنجليزية وعربية للعثور على أفضل النتائج
+اكتب بالعربية. استخدم إيموجي.` },
+        { role: 'user', content: query }
+      ],
+    }),
+  });
+  if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث' });
+  const data = await res.json();
+  const result = data.choices?.[0]?.message?.content;
+  if (result) await tg('sendMessage', { chat_id: chatId, text: `▶️ *بحث يوتيوب:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+}
+
+async function cmdBook(chatId: number, text: string) {
+  const query = text.replace(/\/book\s*/, '').trim();
+  if (!query) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /book <اسم الكتاب أو الموضوع>' });
+
+  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+  if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح' });
+
+  await tg('sendMessage', { chat_id: chatId, text: '📚 جاري البحث عن الكتب...' });
+
+  const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: 'google/gemini-3-flash-preview',
+      messages: [
+        { role: 'system', content: `أنت مساعد بحث كتب متخصص. عند السؤال عن كتاب أو موضوع:
+1. اقترح أفضل 5 كتب في الموضوع (مع المؤلف وسنة النشر)
+2. قدم ملخص مركز لكل كتاب (3-4 أسطر)
+3. اذكر أين يمكن إيجاد الكتاب (مجاني أو مدفوع)
+4. قدم 3 أسئلة مفتاحية يجيب عنها الكتاب
+5. إذا طُلب كتاب بعينه، قدم ملخصاً شاملاً له
+اكتب بالعربية. نظّم الإجابة بشكل واضح مع إيموجي.` },
+        { role: 'user', content: query }
+      ],
+    }),
+  });
+  if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث' });
+  const data = await res.json();
+  const result = data.choices?.[0]?.message?.content;
+  if (result) await tg('sendMessage', { chat_id: chatId, text: `📚 *بحث الكتب:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+}
 
   // Game buttons
   if (data.startsWith('game_')) {
