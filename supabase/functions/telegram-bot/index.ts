@@ -637,6 +637,18 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/gamble': return await cmdGamble(supabase, chatId, userId, parts);
     case '/steal': return await cmdSteal(supabase, chatId, userId, fullName, msg);
     case '/marry': return await cmdMarry(chatId, msg, fullName);
+    // ===== STORE & PAYMENT =====
+    case '/store': return await cmdStore(supabase, chatId);
+    case '/buy': return await cmdBuy(supabase, chatId, userId, fullName, parts, msg);
+    case '/my': return await cmdMy(supabase, chatId, userId);
+    case '/pay': return await cmdPay(supabase, chatId, userId, fullName, parts);
+    case '/confirm': return await cmdConfirm(supabase, chatId, userId, fullName, msg);
+    case '/activate': return await cmdActivate(supabase, chatId, userId, parts);
+    case '/pending': return await cmdPending(supabase, chatId, userId);
+    // ===== SEARCH =====
+    case '/search': return await cmdSearch(chatId, text);
+    case '/youtube': return await cmdYoutube(chatId, text);
+    case '/book': return await cmdBook(chatId, text);
   }
 }
 
