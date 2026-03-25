@@ -74,6 +74,47 @@ export type Database = {
         }
         Relationships: []
       }
+      ads: {
+        Row: {
+          chat_id: number
+          content: string
+          created_at: string
+          id: string
+          is_sent: boolean
+          payment_id: string | null
+          scheduled_at: string | null
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          content: string
+          created_at?: string
+          id?: string
+          is_sent?: boolean
+          payment_id?: string | null
+          scheduled_at?: string | null
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          content?: string
+          created_at?: string
+          id?: string
+          is_sent?: boolean
+          payment_id?: string | null
+          scheduled_at?: string | null
+          user_id?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ads_payment_id_fkey"
+            columns: ["payment_id"]
+            isOneToOne: false
+            referencedRelation: "payment_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       afk_status: {
         Row: {
           chat_id: number
@@ -445,6 +486,51 @@ export type Database = {
         }
         Relationships: []
       }
+      payment_requests: {
+        Row: {
+          amount: number
+          chat_id: number
+          created_at: string
+          id: string
+          proof_file_id: string | null
+          resolved_at: string | null
+          resolved_by: number | null
+          service_details: string | null
+          service_type: string
+          status: string
+          user_id: number
+          user_name: string | null
+        }
+        Insert: {
+          amount: number
+          chat_id: number
+          created_at?: string
+          id?: string
+          proof_file_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: number | null
+          service_details?: string | null
+          service_type: string
+          status?: string
+          user_id: number
+          user_name?: string | null
+        }
+        Update: {
+          amount?: number
+          chat_id?: number
+          created_at?: string
+          id?: string
+          proof_file_id?: string | null
+          resolved_at?: string | null
+          resolved_by?: number | null
+          service_details?: string | null
+          service_type?: string
+          status?: string
+          user_id?: number
+          user_name?: string | null
+        }
+        Relationships: []
+      }
       poll_votes: {
         Row: {
           id: string
@@ -554,6 +640,66 @@ export type Database = {
           is_sent?: boolean | null
           message?: string
           remind_at?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
+      store_items: {
+        Row: {
+          category: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          price_cash: number
+          price_coins: number
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          price_cash?: number
+          price_coins?: number
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          price_cash?: number
+          price_coins?: number
+        }
+        Relationships: []
+      }
+      subscriptions: {
+        Row: {
+          chat_id: number
+          created_at: string
+          expires_at: string | null
+          id: string
+          tier: string
+          user_id: number
+        }
+        Insert: {
+          chat_id: number
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          tier?: string
+          user_id: number
+        }
+        Update: {
+          chat_id?: number
+          created_at?: string
+          expires_at?: string | null
+          id?: string
+          tier?: string
           user_id?: number
         }
         Relationships: []
