@@ -1913,8 +1913,16 @@ async function handleCallbackQuery(supabase: any, query: any) {
       case 'top': await cmdTop(supabase, chatId); break;
       case 'wallet': await cmdWallet(supabase, chatId, userId); break;
       case 'shop': await cmdShop(chatId); break;
+      case 'store': await cmdStore(supabase, chatId); break;
+      case 'my': await cmdMy(supabase, chatId, userId); break;
       case 'achievements': await cmdAchievements(supabase, chatId, userId); break;
       case 'profile': await cmdProfile(supabase, chatId, userId, { reply_to_message: null, from: query.from }); break;
+      case 'search':
+        await tg('sendMessage', {
+          chat_id: chatId, text: '🔍 *أدوات البحث*\n\n🌐 /search <سؤال> — بحث ويب\n▶️ /youtube <موضوع> — بحث يوتيوب\n📚 /book <كتاب> — بحث كتب وملخصات',
+          parse_mode: 'Markdown',
+        });
+        break;
     }
     return;
 }
