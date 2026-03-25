@@ -659,13 +659,14 @@ async function cmdStart(chatId: number, isPrivate: boolean) {
     inline_keyboard: [
       [{ text: '📋 الأوامر', callback_data: 'menu_commands' }, { text: '📊 إحصائياتي', callback_data: 'menu_stats' }],
       [{ text: '🎮 الألعاب', callback_data: 'menu_games' }, { text: '🏆 الترتيب', callback_data: 'menu_top' }],
-      [{ text: '💰 محفظتي', callback_data: 'menu_wallet' }, { text: '🛒 المتجر', callback_data: 'menu_shop' }],
+      [{ text: '💰 محفظتي', callback_data: 'menu_wallet' }, { text: '🏪 المتجر', callback_data: 'menu_store' }],
       [{ text: '🏅 إنجازاتي', callback_data: 'menu_achievements' }, { text: '👤 بروفايلي', callback_data: 'menu_profile' }],
+      [{ text: '🔍 بحث', callback_data: 'menu_search' }, { text: '👜 حسابي', callback_data: 'menu_my' }],
     ]
   };
   await tg('sendMessage', {
     chat_id: chatId,
-    text: `🤖 *مرحباً! أنا شادي*\n\nبوت ذكي للمجموعات والمحادثات الخاصة!\n\n✨ نظام نقاط وعملات وإنجازات\n🎮 ألعاب ممتعة ومتنوعة\n🛡️ حماية متقدمة (فلود + روابط + raid)\n🧠 ذكاء اصطناعي متطور\n📊 إحصائيات وتحليلات\n🗳️ استطلاعات ويانصيب\n\nاختر من القائمة أدناه:`,
+    text: `🤖 *مرحباً! أنا شادي*\n\nبوت ذكي لإدارة المجموعات + منصة خدمات!\n\n✨ نظام نقاط وعملات وإنجازات\n🏪 متجر + نظام دفع (Orange Cash)\n🔍 بحث ويب + يوتيوب + كتب\n🎮 ألعاب ممتعة ومتنوعة\n🛡️ حماية متقدمة\n🧠 ذكاء اصطناعي متطور\n\nاختر من القائمة:`,
     parse_mode: 'Markdown',
     reply_markup: keyboard,
   });
