@@ -1232,11 +1232,13 @@ async function cmdUnban(supabase: any, msg: any, chatId: number, userId: number,
 
 async function cmdHelp(chatId: number) {
   const text = `📋 *جميع أوامر شادي*\n\n` +
-    `*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر\n/stats - إحصائياتك\n/top - الترتيب\n/gamble - قمار\n\n` +
+    `*💰 اقتصاد:*\n/daily - مكافأة يومية\n/wallet - محفظتك\n/gift - إهداء عملات\n/shop - المتجر القديم\n/stats - إحصائياتك\n/top - الترتيب\n/gamble - قمار\n\n` +
+    `*🏪 المتجر والدفع:*\n/store - عرض المنتجات\n/buy <رقم> - شراء بالعملات\n/pay <رقم> - شراء بالمال\n/confirm - تأكيد الدفع\n/my - حسابك ومشترياتك\n\n` +
+    `*🔍 البحث:*\n/search <سؤال> - بحث ويب\n/youtube <موضوع> - بحث يوتيوب\n/book <كتاب> - بحث كتب وملخصات\n\n` +
     `*🎮 ألعاب:*\n/quiz - كويز\n/hack - اختراق وهمي\n/ship - توافق\n/8ball - كرة سحرية\n/fortune - حظك\n/joke - نكتة\n/roast - هجاية\n/compliment - مدح\n/wisdom - حكمة\n/judgment - أحكام\n/dice - نرد\n/coinflip - عملة\n/challenge - تحدي\n/steal - سرقة\n/marry - زواج\n\n` +
     `*👤 ملف شخصي:*\n/profile - بروفايل كامل\n/achievements - إنجازاتك\n/rep +/- - تقييم سمعة\n/afk - وضع غير متاح\n/leaderboard - لوحة الصدارة\n\n` +
     `*🗳️ تفاعل:*\n/poll - استطلاع\n/lottery - يانصيب\n/remind - تذكير\n/translate - ترجمة\n/summary - ملخص\n/whisper - همسة\n\n` +
-    `*🛠️ إدارة:*\n/ban /unban /kick /mute /unmute\n/warn /promote /demote\n/pin /unpin /call /tagall\n/settings /rules /setrules\n/addresponse /responses /delresponse\n/report /slowmode /antiraid\n/linkdashboard - ربط لوحة التحكم\n/calc - آلة حاسبة`;
+    `*🛠️ إدارة:*\n/ban /unban /kick /mute /unmute\n/warn /promote /demote\n/pin /unpin /call /tagall\n/settings /rules /setrules\n/addresponse /responses /delresponse\n/report /slowmode /antiraid\n/linkdashboard - ربط لوحة التحكم`;
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
 }
 
