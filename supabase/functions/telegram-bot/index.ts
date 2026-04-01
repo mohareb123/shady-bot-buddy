@@ -50,14 +50,32 @@ function canReply(chatId: number): boolean {
 
 function isDeveloper(userId: number): boolean { return userId === DEVELOPER_ID; }
 
-// ============ FLOOD DETECTION ============
-function checkFlood(userId: number, chatId: number): boolean {
+// ============ FLOOD & SPAM DETECTION ============
+const contentTracker: Record<string, string[]> = {};
+
+function checkFlood(userId: number, chatId: number, messageText?: string): 'none' | 'flood' | 'repeat' {
   const key = `${userId}_${chatId}`;
   const now = Date.now();
   if (!floodTracker[key]) floodTracker[key] = [];
   floodTracker[key] = floodTracker[key].filter(t => now - t < 10000);
   floodTracker[key].push(now);
-  return floodTracker[key].length > 8; // 8+ messages in 10 seconds
+  
+  // Check message repetition (same content 4+ times in 60 seconds)
+  if (messageText) {
+    const contentKey = `${key}_content`;
+    if (!contentTracker[contentKey]) contentTracker[contentKey] = [];
+    contentTracker[contentKey].push(messageText);
+    // Keep only last 10 messages
+    if (contentTracker[contentKey].length > 10) contentTracker[contentKey] = contentTracker[contentKey].slice(-10);
+    const recentSame = contentTracker[contentKey].filter(t => t === messageText).length;
+    if (recentSame >= 4) {
+      contentTracker[contentKey] = [];
+      return 'repeat';
+    }
+  }
+  
+  if (floodTracker[key].length > 8) return 'flood'; // 8+ messages in 10 seconds
+  return 'none';
 }
 
 // ============ FAKE ACCOUNT DETECTION ============
