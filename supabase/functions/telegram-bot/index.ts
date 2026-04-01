@@ -1096,12 +1096,32 @@ async function cmdDev(supabase: any, chatId: number, userId: number) {
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
 }
 
-async function handleBroadcast(supabase: any, message: string, notificationId?: string) {
+async function handleBroadcast(supabase: any, payload: any) {
   const { data: chats } = await supabase.from('members').select('chat_id');
   if (!chats) return;
   const uniqueChats = [...new Set(chats.map((c: any) => c.chat_id))];
+  const notificationId = payload.notification_id;
+  const type = payload.type || 'text';
+
   for (const chatId of uniqueChats) {
-    try { await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام*\n\n${message}`, parse_mode: 'Markdown' }); } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
+    try {
+      switch (type) {
+        case 'photo':
+          await tg('sendPhoto', { chat_id: chatId, photo: payload.photo_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'Markdown' });
+          break;
+        case 'video':
+          await tg('sendVideo', { chat_id: chatId, video: payload.video_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'Markdown' });
+          break;
+        case 'poll':
+          await tg('sendPoll', { chat_id: chatId, question: payload.question, options: payload.options, is_anonymous: true });
+          break;
+        case 'sticker':
+          await tg('sendSticker', { chat_id: chatId, sticker: payload.sticker_id });
+          break;
+        default:
+          await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام*\n\n${payload.message}`, parse_mode: 'Markdown' });
+      }
+    } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
   }
   if (notificationId) await supabase.from('notifications').update({ is_sent: true }).eq('id', notificationId);
 }
@@ -1111,7 +1131,7 @@ async function cmdBroadcast(supabase: any, chatId: number, userId: number, text:
   const msg = text.replace(/\/broadcast\s*/, '').trim();
   if (!msg) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /broadcast <الرسالة>' });
   const { data: notif } = await supabase.from('notifications').insert({ message: msg, created_by: userId, is_sent: false }).select().single();
-  await handleBroadcast(supabase, msg, notif?.id);
+  await handleBroadcast(supabase, { type: 'text', message: msg, notification_id: notif?.id });
   await tg('sendMessage', { chat_id: chatId, text: '✅ تم إرسال الإشعار لجميع المجموعات' });
 }
 
