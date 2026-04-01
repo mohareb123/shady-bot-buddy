@@ -1694,7 +1694,7 @@ async function checkLinks(supabase: any, msg: any, chatId: number, userId: numbe
   const text = msg.text || msg.caption || '';
   const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})/gi;
   if (!urlRegex.test(text)) return false;
-  if (await isAdmin(chatId, userId)) return false;
+  if (isDeveloper(userId) || await isAdmin(chatId, userId)) return false;
 
   await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
   const { data: member } = await supabase.from('members').select('warnings').eq('user_id', userId).eq('chat_id', chatId).single();
