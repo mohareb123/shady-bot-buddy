@@ -440,20 +440,37 @@ Deno.serve(async (req) => {
     const text = (msg.text || msg.caption || '').trim();
     const isPrivate = msg.chat.type === 'private';
 
-    // ===== FEATURE 1: FLOOD DETECTION (respects spam_protection setting) =====
+    // ===== FEATURE 1: FLOOD & SPAM DETECTION (respects spam_protection setting) =====
     if (!isPrivate && !isDeveloper(userId)) {
       const { data: spamSettings } = await supabase.from('group_settings').select('spam_protection').eq('chat_id', chatId).single();
       const spamEnabled = spamSettings?.spam_protection !== false; // default true
-      if (spamEnabled && checkFlood(userId, chatId)) {
-        const adminCheck = await isAdmin(chatId, userId);
-        if (!adminCheck) {
+      if (spamEnabled) {
+        const floodResult = checkFlood(userId, chatId, text);
+        const adminCheck = floodResult !== 'none' ? await isAdmin(chatId, userId) : false;
+        if (floodResult !== 'none' && !adminCheck) {
+          const muteDuration = floodResult === 'repeat' ? 600 : 300; // 10 min for repeat, 5 for flood
+          const reason = floodResult === 'repeat' ? 'تكرار رسائل' : 'فلود';
+          await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
           await tg('restrictChatMember', {
             chat_id: chatId, user_id: userId,
-            until_date: Math.floor(Date.now() / 1000) + 300,
+            until_date: Math.floor(Date.now() / 1000) + muteDuration,
             permissions: { can_send_messages: false, can_send_media_messages: false, can_send_other_messages: false },
           });
-          await tg('sendMessage', { chat_id: chatId, text: `🛡️ تم كتم ${fullName} تلقائياً لمدة 5 دقائق بسبب الفلود` });
-          await logAdminAction(supabase, chatId, 0, 'نظام الحماية', userId, fullName, 'auto_mute', 'فلود');
+          // Auto-warn
+          const { data: member } = await supabase.from('members').select('warnings').eq('user_id', userId).eq('chat_id', chatId).single();
+          const newW = (member?.warnings || 0) + 1;
+          await supabase.from('members').update({ warnings: newW }).eq('user_id', userId).eq('chat_id', chatId);
+          const { data: maxWarnSettings } = await supabase.from('group_settings').select('max_warnings').eq('chat_id', chatId).single();
+          const maxW = maxWarnSettings?.max_warnings || 3;
+          
+          if (newW >= maxW) {
+            await tg('banChatMember', { chat_id: chatId, user_id: userId });
+            await tg('unbanChatMember', { chat_id: chatId, user_id: userId, only_if_banned: true });
+            await tg('sendMessage', { chat_id: chatId, text: `🚫 تم طرد ${fullName} تلقائياً بسبب ${reason} (${newW}/${maxW} تحذيرات)` });
+          } else {
+            await tg('sendMessage', { chat_id: chatId, text: `🛡️ تم كتم ${fullName} تلقائياً لمدة ${muteDuration / 60} دقائق بسبب ${reason}\n⚠️ تحذير (${newW}/${maxW})` });
+          }
+          await logAdminAction(supabase, chatId, 0, 'نظام الحماية', userId, fullName, `auto_mute (${reason})`);
           return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
         }
       }
