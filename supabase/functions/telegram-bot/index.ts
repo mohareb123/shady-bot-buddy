@@ -1811,9 +1811,16 @@ async function handleNewMembers(supabase: any, msg: any) {
     if (member.is_bot) continue;
     const name = `${member.first_name || ''} ${member.last_name || ''}`.trim();
 
-    // FEATURE: Suspicious account warning
+    // FEATURE: Suspicious account detection + auto-restriction
     if (isSuspiciousAccount(member)) {
-      await tg('sendMessage', { chat_id: chatId, text: `⚠️ *تنبيه:* حساب ${name} مشبوه (بدون يوزرنيم أو معلومات ناقصة)`, parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: `⚠️ *تنبيه:* حساب ${name} مشبوه (بدون يوزرنيم أو معلومات ناقصة)\n🔒 تم تقييده مؤقتاً لمدة ساعة`, parse_mode: 'Markdown' });
+      // Auto-restrict suspicious new accounts for 1 hour
+      await tg('restrictChatMember', {
+        chat_id: chatId, user_id: member.id,
+        until_date: Math.floor(Date.now() / 1000) + 3600,
+        permissions: { can_send_messages: true, can_send_media_messages: false, can_send_other_messages: false, can_add_web_page_previews: false },
+      });
+      await logAdminAction(supabase, chatId, 0, 'نظام الحماية', member.id, name, 'auto_restrict', 'حساب مشبوه');
     }
 
     const welcome = pick(welcomeMessages).replace('{name}', name);
