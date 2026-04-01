@@ -108,10 +108,20 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.
 إذا سألك سؤال ثقافي أو علمي أجب عليه بدقة ووضوح.
 إذا طلب ترجمة نص ترجمه بدقة.
-إذا طلب بحث عن موضوع أو شخص، قدم معلومات مفصلة ودقيقة.
-إذا طلب ملخص كتاب أو معلومات عنه، قدمها بشكل منظم.
+إذا طلب بحث عن موضوع أو شخص، قدم معلومات مفصلة ودقيقة مع المصادر.
+إذا طلب ملخص كتاب أو معلومات عنه، قدمها بشكل منظم مع روابط PDF إن أمكن.
+إذا طلب بحث يوتيوب، اقترح أفضل الفيديوهات مع روابط بحث.
+إذا طلب بحث ويب، ابحث وقدم النتائج مع المواقع والمصادر.
 لديك ذاكرة للمحادثات السابقة مع المستخدم. استخدمها لتكون أكثر طبيعية.
 حلل سياق المحادثة لفهم نوايا المستخدم حتى لو لم يذكر اسمك مباشرة.
+
+أنت قادر على تنفيذ جميع الأوامر الإدارية وأوامر البوت بدون الحاجة لكتابة أمر. مثلاً:
+- "يا شادي اكتب نكتة" → أكتب نكتة مضحكة
+- "يا شادي شو حظي اليوم" → أعطي حظ اليوم
+- "يا شادي ترجم" → ترجم الرسالة المردود عليها
+- "يا شادي ابحث عن X" → ابحث عن الموضوع وقدم نتائج مع مصادر
+- "يا شادي حكمة" → أعطي حكمة
+- "يا شادي كم عملاتي" → أجب عن رصيد المحفظة
 ${isAdminOrDev ? `
 المستخدم الحالي مشرف/مطور وله صلاحيات كاملة.
 إذا طلب منك تنفيذ إجراء إداري (حذف رسالة، طرد، حظر، كتم، تحذير، فك كتم، ترقية، إضافة عملات/نقاط، إزالة تحذيرات، تثبيت، إلغاء تثبيت) استخدم أداة execute_action.
@@ -331,9 +341,9 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    // Handle broadcast action from dashboard
-    if (body.action === 'broadcast' && body.message) {
-      await handleBroadcast(getSupabase(), body.message, body.notification_id);
+    // Handle broadcast action from dashboard (rich media support)
+    if (body.action === 'broadcast') {
+      await handleBroadcast(getSupabase(), body);
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
@@ -392,9 +402,11 @@ Deno.serve(async (req) => {
     const text = (msg.text || msg.caption || '').trim();
     const isPrivate = msg.chat.type === 'private';
 
-    // ===== FEATURE 1: FLOOD DETECTION =====
+    // ===== FEATURE 1: FLOOD DETECTION (respects spam_protection setting) =====
     if (!isPrivate && !isDeveloper(userId)) {
-      if (checkFlood(userId, chatId)) {
+      const { data: spamSettings } = await supabase.from('group_settings').select('spam_protection').eq('chat_id', chatId).single();
+      const spamEnabled = spamSettings?.spam_protection !== false; // default true
+      if (spamEnabled && checkFlood(userId, chatId)) {
         const adminCheck = await isAdmin(chatId, userId);
         if (!adminCheck) {
           await tg('restrictChatMember', {
@@ -1094,12 +1106,32 @@ async function cmdDev(supabase: any, chatId: number, userId: number) {
   await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'Markdown' });
 }
 
-async function handleBroadcast(supabase: any, message: string, notificationId?: string) {
+async function handleBroadcast(supabase: any, payload: any) {
   const { data: chats } = await supabase.from('members').select('chat_id');
   if (!chats) return;
   const uniqueChats = [...new Set(chats.map((c: any) => c.chat_id))];
+  const notificationId = payload.notification_id;
+  const type = payload.type || 'text';
+
   for (const chatId of uniqueChats) {
-    try { await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام*\n\n${message}`, parse_mode: 'Markdown' }); } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
+    try {
+      switch (type) {
+        case 'photo':
+          await tg('sendPhoto', { chat_id: chatId, photo: payload.photo_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'Markdown' });
+          break;
+        case 'video':
+          await tg('sendVideo', { chat_id: chatId, video: payload.video_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'Markdown' });
+          break;
+        case 'poll':
+          await tg('sendPoll', { chat_id: chatId, question: payload.question, options: payload.options, is_anonymous: true });
+          break;
+        case 'sticker':
+          await tg('sendSticker', { chat_id: chatId, sticker: payload.sticker_id });
+          break;
+        default:
+          await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام*\n\n${payload.message}`, parse_mode: 'Markdown' });
+      }
+    } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
   }
   if (notificationId) await supabase.from('notifications').update({ is_sent: true }).eq('id', notificationId);
 }
@@ -1109,7 +1141,7 @@ async function cmdBroadcast(supabase: any, chatId: number, userId: number, text:
   const msg = text.replace(/\/broadcast\s*/, '').trim();
   if (!msg) return tg('sendMessage', { chat_id: chatId, text: '❌ استخدم: /broadcast <الرسالة>' });
   const { data: notif } = await supabase.from('notifications').insert({ message: msg, created_by: userId, is_sent: false }).select().single();
-  await handleBroadcast(supabase, msg, notif?.id);
+  await handleBroadcast(supabase, { type: 'text', message: msg, notification_id: notif?.id });
   await tg('sendMessage', { chat_id: chatId, text: '✅ تم إرسال الإشعار لجميع المجموعات' });
 }
 
@@ -1662,7 +1694,7 @@ async function checkLinks(supabase: any, msg: any, chatId: number, userId: numbe
   const text = msg.text || msg.caption || '';
   const urlRegex = /(https?:\/\/[^\s]+)|(www\.[^\s]+)|([a-zA-Z0-9-]+\.[a-zA-Z]{2,})/gi;
   if (!urlRegex.test(text)) return false;
-  if (await isAdmin(chatId, userId)) return false;
+  if (isDeveloper(userId) || await isAdmin(chatId, userId)) return false;
 
   await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id });
   const { data: member } = await supabase.from('members').select('warnings').eq('user_id', userId).eq('chat_id', chatId).single();
@@ -1680,10 +1712,35 @@ async function checkLinks(supabase: any, msg: any, chatId: number, userId: numbe
   return true;
 }
 
+// Built-in greetings that work in all groups
+const BUILTIN_RESPONSES: Record<string, string> = {
+  'السلام عليكم': 'وعليكم السلام ورحمة الله وبركاته 🌸',
+  'سلام عليكم': 'وعليكم السلام ورحمة الله 🌸',
+  'السلام': 'وعليكم السلام 🌸',
+  'مرحبا': 'أهلاً وسهلاً! 😊',
+  'مرحبًا': 'أهلاً وسهلاً! 😊',
+  'هاي': 'هلا والله! 👋',
+  'هلا': 'هلا بيك! 🌟',
+  'صباح الخير': 'صباح النور والسرور 🌞',
+  'مساء الخير': 'مساء النور والورد 🌙',
+  'تصبح على خير': 'وأنت من أهل الخير 🌙💤',
+  'شكرا': 'العفو! 😊',
+  'شكراً': 'العفو! ما سوينا شي 😊',
+  'مع السلامة': 'في أمان الله 👋💕',
+  'باي': 'باي باي! 👋',
+};
+
 async function checkAutoResponses(supabase: any, chatId: number, text: string): Promise<string | null> {
+  const lower = text.toLowerCase().trim();
+  // Check built-in responses first (exact or starts-with match)
+  for (const [trigger, response] of Object.entries(BUILTIN_RESPONSES)) {
+    if (lower === trigger || lower.startsWith(trigger + ' ') || lower.startsWith(trigger + '\n')) {
+      return response;
+    }
+  }
+  // Check custom responses from database
   const { data: responses } = await supabase.from('auto_responses').select('trigger_word, response').eq('chat_id', chatId);
   if (!responses) return null;
-  const lower = text.toLowerCase();
   const match = responses.find((r: any) => lower.includes(r.trigger_word.toLowerCase()));
   return match?.response || null;
 }
@@ -2134,27 +2191,49 @@ async function cmdSearch(chatId: number, text: string) {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح حالياً' });
 
-  await tg('sendMessage', { chat_id: chatId, text: '🔍 جاري البحث...' });
+  await tg('sendMessage', { chat_id: chatId, text: '🔍 جاري البحث في الويب...' });
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
+      model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: `أنت محرك بحث ذكي. أجب عن استفسار المستخدم بمعلومات دقيقة ومحدّثة.
-قدم الإجابة في نقاط مرتبة ومختصرة. إذا كان السؤال عن شخص، قدم معلومات عنه.
-إذا كان عن موضوع تقني أو علمي، قدم شرحاً واضحاً.
-استخدم الإيموجي لتنظيم النتائج. اكتب بالعربية.
-في النهاية اكتب ملاحظة إذا كانت المعلومات قد تكون غير محدثة.` },
-        { role: 'user', content: query }
+        { role: 'system', content: `أنت محرك بحث ويب متقدم. عند البحث عن أي موضوع:
+
+1. ابحث عن المعلومات الأكثر دقة وحداثة
+2. قدم النتائج في نقاط مرتبة ومنظمة
+3. اذكر المصادر والمواقع التي يمكن الرجوع إليها (بروابط حقيقية إن أمكن)
+4. إذا كان البحث عن شخص: قدم معلومات تفصيلية عنه (السيرة، الإنجازات، حسابات السوشيال ميديا إن وجدت)
+5. إذا كان عن موضوع تقني أو علمي: قدم شرحاً واضحاً مع أمثلة
+6. في النهاية، اذكر قائمة بأهم المواقع التي يمكن البحث فيها لمزيد من المعلومات
+
+📌 تنسيق النتائج:
+🔹 النتيجة الأولى
+🔹 النتيجة الثانية
+...
+🌐 مصادر مقترحة: (اذكر 3-5 مواقع حقيقية مع روابطها)
+
+اكتب بالعربية. كن دقيقاً ومختصراً. استخدم الإيموجي.` },
+        { role: 'user', content: `ابحث عن: ${query}` }
       ],
     }),
   });
   if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث. حاول مرة أخرى' });
   const data = await res.json();
   const result = data.choices?.[0]?.message?.content;
-  if (result) await tg('sendMessage', { chat_id: chatId, text: `🔍 *نتائج البحث:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+  if (result) {
+    // Split long messages
+    const fullText = `🔍 *نتائج البحث:* ${query}\n\n${result}`;
+    if (fullText.length > 4000) {
+      const mid = Math.floor(fullText.length / 2);
+      const splitAt = fullText.lastIndexOf('\n', mid) || mid;
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(0, splitAt), parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(splitAt), parse_mode: 'Markdown' });
+    } else {
+      await tg('sendMessage', { chat_id: chatId, text: fullText, parse_mode: 'Markdown' });
+    }
+  }
 }
 
 async function cmdYoutube(chatId: number, text: string) {
@@ -2164,28 +2243,45 @@ async function cmdYoutube(chatId: number, text: string) {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح' });
 
-  await tg('sendMessage', { chat_id: chatId, text: '▶️ جاري البحث في يوتيوب...' });
+  await tg('sendMessage', { chat_id: chatId, text: '▶️ جاري البحث عن أفضل الفيديوهات...' });
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
+      model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: `أنت مساعد بحث يوتيوب. عند سؤالك عن موضوع:
-1. اقترح أفضل 5 فيديوهات يوتيوب مناسبة (عناوين حقيقية أو مقترحة)
-2. لكل فيديو: العنوان، القناة المقترحة، المدة التقريبية
-3. قدم ملخص سريع لما ستجده في هذه الفيديوهات
-4. اقترح كلمات بحث إنجليزية وعربية للعثور على أفضل النتائج
-اكتب بالعربية. استخدم إيموجي.` },
-        { role: 'user', content: query }
+        { role: 'system', content: `أنت خبير بحث يوتيوب. عند البحث عن موضوع:
+
+1. اقترح أفضل 5-7 فيديوهات يوتيوب (عناوين حقيقية من قنوات مشهورة)
+2. لكل فيديو قدم:
+   ▶️ العنوان الكامل
+   📺 اسم القناة
+   ⏱️ المدة التقريبية
+   🔗 رابط البحث المباشر: https://www.youtube.com/results?search_query=<كلمات البحث بالإنجليزية مرمزة URL>
+   📝 وصف مختصر (سطر واحد)
+3. في النهاية، قدم رابط بحث شامل للموضوع على يوتيوب
+4. اقترح كلمات بحث بالعربية والإنجليزية
+
+اكتب بالعربية. استخدم إيموجي. رتّب حسب الأفضل والأكثر فائدة.` },
+        { role: 'user', content: `ابحث عن فيديوهات: ${query}` }
       ],
     }),
   });
   if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث' });
   const data = await res.json();
   const result = data.choices?.[0]?.message?.content;
-  if (result) await tg('sendMessage', { chat_id: chatId, text: `▶️ *بحث يوتيوب:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+  if (result) {
+    const fullText = `▶️ *بحث يوتيوب:* ${query}\n\n${result}`;
+    if (fullText.length > 4000) {
+      const mid = Math.floor(fullText.length / 2);
+      const splitAt = fullText.lastIndexOf('\n', mid) || mid;
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(0, splitAt), parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(splitAt), parse_mode: 'Markdown' });
+    } else {
+      await tg('sendMessage', { chat_id: chatId, text: fullText, parse_mode: 'Markdown' });
+    }
+  }
 }
 
 async function cmdBook(chatId: number, text: string) {
@@ -2195,29 +2291,63 @@ async function cmdBook(chatId: number, text: string) {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح' });
 
-  await tg('sendMessage', { chat_id: chatId, text: '📚 جاري البحث عن الكتب...' });
+  await tg('sendMessage', { chat_id: chatId, text: '📚 جاري البحث عن الكتب وملفات PDF...' });
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
+      model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: `أنت مساعد بحث كتب متخصص. عند السؤال عن كتاب أو موضوع:
-1. اقترح أفضل 5 كتب في الموضوع (مع المؤلف وسنة النشر)
-2. قدم ملخص مركز لكل كتاب (3-4 أسطر)
-3. اذكر أين يمكن إيجاد الكتاب (مجاني أو مدفوع)
-4. قدم 3 أسئلة مفتاحية يجيب عنها الكتاب
-5. إذا طُلب كتاب بعينه، قدم ملخصاً شاملاً له
+        { role: 'system', content: `أنت مساعد بحث كتب وملفات PDF متخصص. عند السؤال عن كتاب أو موضوع:
+
+1. اقترح أفضل 5 كتب في الموضوع مع:
+   📖 العنوان الكامل (بالعربية والإنجليزية)
+   ✍️ المؤلف وسنة النشر
+   📄 عدد الصفحات تقريباً
+   ⭐ التقييم المتوقع
+
+2. لكل كتاب قدم ملخصاً مركزاً (3-5 أسطر)
+
+3. 🔗 روابط تحميل PDF مجانية (حقيقية):
+   - مكتبة نور: https://www.noor-book.com/
+   - أرشيف الإنترنت: https://archive.org/
+   - PDF Drive: https://www.pdfdrive.com/
+   - مكتبة الكتب: https://www.kutub-pdf.net/
+   - Z-Library: https://z-lib.org/
+   - Libgen: https://libgen.is/
+   - اقترح رابط بحث مباشر لكل كتاب في هذه المواقع
+
+4. قدم 5 أسئلة مفتاحية يجيب عنها الكتاب
+
+5. إذا طُلب كتاب بعينه: قدم ملخصاً شاملاً مع أهم الأفكار والفصول
+
 اكتب بالعربية. نظّم الإجابة بشكل واضح مع إيموجي.` },
-        { role: 'user', content: query }
+        { role: 'user', content: `ابحث عن كتاب: ${query}` }
       ],
     }),
   });
   if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث' });
   const data = await res.json();
   const result = data.choices?.[0]?.message?.content;
-  if (result) await tg('sendMessage', { chat_id: chatId, text: `📚 *بحث الكتب:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+  if (result) {
+    const fullText = `📚 *بحث الكتب:* ${query}\n\n${result}`;
+    if (fullText.length > 4000) {
+      const parts: string[] = [];
+      let remaining = fullText;
+      while (remaining.length > 4000) {
+        const splitAt = remaining.lastIndexOf('\n', 4000) || 4000;
+        parts.push(remaining.substring(0, splitAt));
+        remaining = remaining.substring(splitAt);
+      }
+      parts.push(remaining);
+      for (const part of parts) {
+        await tg('sendMessage', { chat_id: chatId, text: part, parse_mode: 'Markdown' });
+      }
+    } else {
+      await tg('sendMessage', { chat_id: chatId, text: fullText, parse_mode: 'Markdown' });
+    }
+  }
 }
 
   // Game buttons
