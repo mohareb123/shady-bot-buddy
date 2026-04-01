@@ -331,9 +331,9 @@ Deno.serve(async (req) => {
   try {
     const body = await req.json();
 
-    // Handle broadcast action from dashboard
-    if (body.action === 'broadcast' && body.message) {
-      await handleBroadcast(getSupabase(), body.message, body.notification_id);
+    // Handle broadcast action from dashboard (rich media support)
+    if (body.action === 'broadcast') {
+      await handleBroadcast(getSupabase(), body);
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
