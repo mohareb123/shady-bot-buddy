@@ -347,6 +347,26 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
+    // Handle promote/demote from dashboard
+    if (body.action === 'promote_member') {
+      await tg('promoteChatMember', {
+        chat_id: body.chat_id, user_id: body.user_id,
+        can_manage_chat: true, can_delete_messages: true, can_restrict_members: true,
+        can_promote_members: false, can_change_info: true, can_invite_users: true,
+        can_pin_messages: true, can_manage_video_chats: true,
+      });
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+    if (body.action === 'demote_member') {
+      await tg('promoteChatMember', {
+        chat_id: body.chat_id, user_id: body.user_id,
+        can_manage_chat: false, can_delete_messages: false, can_restrict_members: false,
+        can_promote_members: false, can_change_info: false, can_invite_users: false,
+        can_pin_messages: false, can_manage_video_chats: false,
+      });
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+
     // Check if link code is valid (pre-check before signup)
     if (body.action === 'check_link_code') {
       const supabase = getSupabase();
