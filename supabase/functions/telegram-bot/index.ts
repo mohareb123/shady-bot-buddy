@@ -2181,27 +2181,49 @@ async function cmdSearch(chatId: number, text: string) {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح حالياً' });
 
-  await tg('sendMessage', { chat_id: chatId, text: '🔍 جاري البحث...' });
+  await tg('sendMessage', { chat_id: chatId, text: '🔍 جاري البحث في الويب...' });
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
+      model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: `أنت محرك بحث ذكي. أجب عن استفسار المستخدم بمعلومات دقيقة ومحدّثة.
-قدم الإجابة في نقاط مرتبة ومختصرة. إذا كان السؤال عن شخص، قدم معلومات عنه.
-إذا كان عن موضوع تقني أو علمي، قدم شرحاً واضحاً.
-استخدم الإيموجي لتنظيم النتائج. اكتب بالعربية.
-في النهاية اكتب ملاحظة إذا كانت المعلومات قد تكون غير محدثة.` },
-        { role: 'user', content: query }
+        { role: 'system', content: `أنت محرك بحث ويب متقدم. عند البحث عن أي موضوع:
+
+1. ابحث عن المعلومات الأكثر دقة وحداثة
+2. قدم النتائج في نقاط مرتبة ومنظمة
+3. اذكر المصادر والمواقع التي يمكن الرجوع إليها (بروابط حقيقية إن أمكن)
+4. إذا كان البحث عن شخص: قدم معلومات تفصيلية عنه (السيرة، الإنجازات، حسابات السوشيال ميديا إن وجدت)
+5. إذا كان عن موضوع تقني أو علمي: قدم شرحاً واضحاً مع أمثلة
+6. في النهاية، اذكر قائمة بأهم المواقع التي يمكن البحث فيها لمزيد من المعلومات
+
+📌 تنسيق النتائج:
+🔹 النتيجة الأولى
+🔹 النتيجة الثانية
+...
+🌐 مصادر مقترحة: (اذكر 3-5 مواقع حقيقية مع روابطها)
+
+اكتب بالعربية. كن دقيقاً ومختصراً. استخدم الإيموجي.` },
+        { role: 'user', content: `ابحث عن: ${query}` }
       ],
     }),
   });
   if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث. حاول مرة أخرى' });
   const data = await res.json();
   const result = data.choices?.[0]?.message?.content;
-  if (result) await tg('sendMessage', { chat_id: chatId, text: `🔍 *نتائج البحث:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+  if (result) {
+    // Split long messages
+    const fullText = `🔍 *نتائج البحث:* ${query}\n\n${result}`;
+    if (fullText.length > 4000) {
+      const mid = Math.floor(fullText.length / 2);
+      const splitAt = fullText.lastIndexOf('\n', mid) || mid;
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(0, splitAt), parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(splitAt), parse_mode: 'Markdown' });
+    } else {
+      await tg('sendMessage', { chat_id: chatId, text: fullText, parse_mode: 'Markdown' });
+    }
+  }
 }
 
 async function cmdYoutube(chatId: number, text: string) {
@@ -2211,28 +2233,45 @@ async function cmdYoutube(chatId: number, text: string) {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح' });
 
-  await tg('sendMessage', { chat_id: chatId, text: '▶️ جاري البحث في يوتيوب...' });
+  await tg('sendMessage', { chat_id: chatId, text: '▶️ جاري البحث عن أفضل الفيديوهات...' });
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
+      model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: `أنت مساعد بحث يوتيوب. عند سؤالك عن موضوع:
-1. اقترح أفضل 5 فيديوهات يوتيوب مناسبة (عناوين حقيقية أو مقترحة)
-2. لكل فيديو: العنوان، القناة المقترحة، المدة التقريبية
-3. قدم ملخص سريع لما ستجده في هذه الفيديوهات
-4. اقترح كلمات بحث إنجليزية وعربية للعثور على أفضل النتائج
-اكتب بالعربية. استخدم إيموجي.` },
-        { role: 'user', content: query }
+        { role: 'system', content: `أنت خبير بحث يوتيوب. عند البحث عن موضوع:
+
+1. اقترح أفضل 5-7 فيديوهات يوتيوب (عناوين حقيقية من قنوات مشهورة)
+2. لكل فيديو قدم:
+   ▶️ العنوان الكامل
+   📺 اسم القناة
+   ⏱️ المدة التقريبية
+   🔗 رابط البحث المباشر: https://www.youtube.com/results?search_query=<كلمات البحث بالإنجليزية مرمزة URL>
+   📝 وصف مختصر (سطر واحد)
+3. في النهاية، قدم رابط بحث شامل للموضوع على يوتيوب
+4. اقترح كلمات بحث بالعربية والإنجليزية
+
+اكتب بالعربية. استخدم إيموجي. رتّب حسب الأفضل والأكثر فائدة.` },
+        { role: 'user', content: `ابحث عن فيديوهات: ${query}` }
       ],
     }),
   });
   if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث' });
   const data = await res.json();
   const result = data.choices?.[0]?.message?.content;
-  if (result) await tg('sendMessage', { chat_id: chatId, text: `▶️ *بحث يوتيوب:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+  if (result) {
+    const fullText = `▶️ *بحث يوتيوب:* ${query}\n\n${result}`;
+    if (fullText.length > 4000) {
+      const mid = Math.floor(fullText.length / 2);
+      const splitAt = fullText.lastIndexOf('\n', mid) || mid;
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(0, splitAt), parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: fullText.substring(splitAt), parse_mode: 'Markdown' });
+    } else {
+      await tg('sendMessage', { chat_id: chatId, text: fullText, parse_mode: 'Markdown' });
+    }
+  }
 }
 
 async function cmdBook(chatId: number, text: string) {
@@ -2242,29 +2281,63 @@ async function cmdBook(chatId: number, text: string) {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return tg('sendMessage', { chat_id: chatId, text: '❌ البحث غير متاح' });
 
-  await tg('sendMessage', { chat_id: chatId, text: '📚 جاري البحث عن الكتب...' });
+  await tg('sendMessage', { chat_id: chatId, text: '📚 جاري البحث عن الكتب وملفات PDF...' });
 
   const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
     headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      model: 'google/gemini-3-flash-preview',
+      model: 'google/gemini-2.5-flash',
       messages: [
-        { role: 'system', content: `أنت مساعد بحث كتب متخصص. عند السؤال عن كتاب أو موضوع:
-1. اقترح أفضل 5 كتب في الموضوع (مع المؤلف وسنة النشر)
-2. قدم ملخص مركز لكل كتاب (3-4 أسطر)
-3. اذكر أين يمكن إيجاد الكتاب (مجاني أو مدفوع)
-4. قدم 3 أسئلة مفتاحية يجيب عنها الكتاب
-5. إذا طُلب كتاب بعينه، قدم ملخصاً شاملاً له
+        { role: 'system', content: `أنت مساعد بحث كتب وملفات PDF متخصص. عند السؤال عن كتاب أو موضوع:
+
+1. اقترح أفضل 5 كتب في الموضوع مع:
+   📖 العنوان الكامل (بالعربية والإنجليزية)
+   ✍️ المؤلف وسنة النشر
+   📄 عدد الصفحات تقريباً
+   ⭐ التقييم المتوقع
+
+2. لكل كتاب قدم ملخصاً مركزاً (3-5 أسطر)
+
+3. 🔗 روابط تحميل PDF مجانية (حقيقية):
+   - مكتبة نور: https://www.noor-book.com/
+   - أرشيف الإنترنت: https://archive.org/
+   - PDF Drive: https://www.pdfdrive.com/
+   - مكتبة الكتب: https://www.kutub-pdf.net/
+   - Z-Library: https://z-lib.org/
+   - Libgen: https://libgen.is/
+   - اقترح رابط بحث مباشر لكل كتاب في هذه المواقع
+
+4. قدم 5 أسئلة مفتاحية يجيب عنها الكتاب
+
+5. إذا طُلب كتاب بعينه: قدم ملخصاً شاملاً مع أهم الأفكار والفصول
+
 اكتب بالعربية. نظّم الإجابة بشكل واضح مع إيموجي.` },
-        { role: 'user', content: query }
+        { role: 'user', content: `ابحث عن كتاب: ${query}` }
       ],
     }),
   });
   if (!res.ok) return tg('sendMessage', { chat_id: chatId, text: '❌ فشل البحث' });
   const data = await res.json();
   const result = data.choices?.[0]?.message?.content;
-  if (result) await tg('sendMessage', { chat_id: chatId, text: `📚 *بحث الكتب:* ${query}\n\n${result}`, parse_mode: 'Markdown' });
+  if (result) {
+    const fullText = `📚 *بحث الكتب:* ${query}\n\n${result}`;
+    if (fullText.length > 4000) {
+      const parts: string[] = [];
+      let remaining = fullText;
+      while (remaining.length > 4000) {
+        const splitAt = remaining.lastIndexOf('\n', 4000) || 4000;
+        parts.push(remaining.substring(0, splitAt));
+        remaining = remaining.substring(splitAt);
+      }
+      parts.push(remaining);
+      for (const part of parts) {
+        await tg('sendMessage', { chat_id: chatId, text: part, parse_mode: 'Markdown' });
+      }
+    } else {
+      await tg('sendMessage', { chat_id: chatId, text: fullText, parse_mode: 'Markdown' });
+    }
+  }
 }
 
   // Game buttons
