@@ -1682,10 +1682,35 @@ async function checkLinks(supabase: any, msg: any, chatId: number, userId: numbe
   return true;
 }
 
+// Built-in greetings that work in all groups
+const BUILTIN_RESPONSES: Record<string, string> = {
+  'السلام عليكم': 'وعليكم السلام ورحمة الله وبركاته 🌸',
+  'سلام عليكم': 'وعليكم السلام ورحمة الله 🌸',
+  'السلام': 'وعليكم السلام 🌸',
+  'مرحبا': 'أهلاً وسهلاً! 😊',
+  'مرحبًا': 'أهلاً وسهلاً! 😊',
+  'هاي': 'هلا والله! 👋',
+  'هلا': 'هلا بيك! 🌟',
+  'صباح الخير': 'صباح النور والسرور 🌞',
+  'مساء الخير': 'مساء النور والورد 🌙',
+  'تصبح على خير': 'وأنت من أهل الخير 🌙💤',
+  'شكرا': 'العفو! 😊',
+  'شكراً': 'العفو! ما سوينا شي 😊',
+  'مع السلامة': 'في أمان الله 👋💕',
+  'باي': 'باي باي! 👋',
+};
+
 async function checkAutoResponses(supabase: any, chatId: number, text: string): Promise<string | null> {
+  const lower = text.toLowerCase().trim();
+  // Check built-in responses first (exact or starts-with match)
+  for (const [trigger, response] of Object.entries(BUILTIN_RESPONSES)) {
+    if (lower === trigger || lower.startsWith(trigger + ' ') || lower.startsWith(trigger + '\n')) {
+      return response;
+    }
+  }
+  // Check custom responses from database
   const { data: responses } = await supabase.from('auto_responses').select('trigger_word, response').eq('chat_id', chatId);
   if (!responses) return null;
-  const lower = text.toLowerCase();
   const match = responses.find((r: any) => lower.includes(r.trigger_word.toLowerCase()));
   return match?.response || null;
 }
