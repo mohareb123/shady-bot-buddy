@@ -959,6 +959,7 @@ async function cmdWhisper(supabase: any, msg: any, chatId: number, userId: numbe
 // ============ ADMIN COMMANDS ============
 
 async function isAdmin(chatId: number, userId: number): Promise<boolean> {
+  if (isDeveloper(userId)) return true; // Developer always has admin privileges
   const res = await tg('getChatMember', { chat_id: chatId, user_id: userId });
   return ['creator', 'administrator'].includes(res.result?.status);
 }
