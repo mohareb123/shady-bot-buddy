@@ -392,9 +392,11 @@ Deno.serve(async (req) => {
     const text = (msg.text || msg.caption || '').trim();
     const isPrivate = msg.chat.type === 'private';
 
-    // ===== FEATURE 1: FLOOD DETECTION =====
+    // ===== FEATURE 1: FLOOD DETECTION (respects spam_protection setting) =====
     if (!isPrivate && !isDeveloper(userId)) {
-      if (checkFlood(userId, chatId)) {
+      const { data: spamSettings } = await supabase.from('group_settings').select('spam_protection').eq('chat_id', chatId).single();
+      const spamEnabled = spamSettings?.spam_protection !== false; // default true
+      if (spamEnabled && checkFlood(userId, chatId)) {
         const adminCheck = await isAdmin(chatId, userId);
         if (!adminCheck) {
           await tg('restrictChatMember', {
