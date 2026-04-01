@@ -50,14 +50,32 @@ function canReply(chatId: number): boolean {
 
 function isDeveloper(userId: number): boolean { return userId === DEVELOPER_ID; }
 
-// ============ FLOOD DETECTION ============
-function checkFlood(userId: number, chatId: number): boolean {
+// ============ FLOOD & SPAM DETECTION ============
+const contentTracker: Record<string, string[]> = {};
+
+function checkFlood(userId: number, chatId: number, messageText?: string): 'none' | 'flood' | 'repeat' {
   const key = `${userId}_${chatId}`;
   const now = Date.now();
   if (!floodTracker[key]) floodTracker[key] = [];
   floodTracker[key] = floodTracker[key].filter(t => now - t < 10000);
   floodTracker[key].push(now);
-  return floodTracker[key].length > 8; // 8+ messages in 10 seconds
+  
+  // Check message repetition (same content 4+ times in 60 seconds)
+  if (messageText) {
+    const contentKey = `${key}_content`;
+    if (!contentTracker[contentKey]) contentTracker[contentKey] = [];
+    contentTracker[contentKey].push(messageText);
+    // Keep only last 10 messages
+    if (contentTracker[contentKey].length > 10) contentTracker[contentKey] = contentTracker[contentKey].slice(-10);
+    const recentSame = contentTracker[contentKey].filter(t => t === messageText).length;
+    if (recentSame >= 4) {
+      contentTracker[contentKey] = [];
+      return 'repeat';
+    }
+  }
+  
+  if (floodTracker[key].length > 8) return 'flood'; // 8+ messages in 10 seconds
+  return 'none';
 }
 
 // ============ FAKE ACCOUNT DETECTION ============
@@ -347,6 +365,26 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
+    // Handle promote/demote from dashboard
+    if (body.action === 'promote_member') {
+      await tg('promoteChatMember', {
+        chat_id: body.chat_id, user_id: body.user_id,
+        can_manage_chat: true, can_delete_messages: true, can_restrict_members: true,
+        can_promote_members: false, can_change_info: true, can_invite_users: true,
+        can_pin_messages: true, can_manage_video_chats: true,
+      });
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+    if (body.action === 'demote_member') {
+      await tg('promoteChatMember', {
+        chat_id: body.chat_id, user_id: body.user_id,
+        can_manage_chat: false, can_delete_messages: false, can_restrict_members: false,
+        can_promote_members: false, can_change_info: false, can_invite_users: false,
+        can_pin_messages: false, can_manage_video_chats: false,
+      });
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+
     // Check if link code is valid (pre-check before signup)
     if (body.action === 'check_link_code') {
       const supabase = getSupabase();
@@ -402,20 +440,37 @@ Deno.serve(async (req) => {
     const text = (msg.text || msg.caption || '').trim();
     const isPrivate = msg.chat.type === 'private';
 
-    // ===== FEATURE 1: FLOOD DETECTION (respects spam_protection setting) =====
+    // ===== FEATURE 1: FLOOD & SPAM DETECTION (respects spam_protection setting) =====
     if (!isPrivate && !isDeveloper(userId)) {
       const { data: spamSettings } = await supabase.from('group_settings').select('spam_protection').eq('chat_id', chatId).single();
       const spamEnabled = spamSettings?.spam_protection !== false; // default true
-      if (spamEnabled && checkFlood(userId, chatId)) {
-        const adminCheck = await isAdmin(chatId, userId);
-        if (!adminCheck) {
+      if (spamEnabled) {
+        const floodResult = checkFlood(userId, chatId, text);
+        const adminCheck = floodResult !== 'none' ? await isAdmin(chatId, userId) : false;
+        if (floodResult !== 'none' && !adminCheck) {
+          const muteDuration = floodResult === 'repeat' ? 600 : 300; // 10 min for repeat, 5 for flood
+          const reason = floodResult === 'repeat' ? 'تكرار رسائل' : 'فلود';
+          await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
           await tg('restrictChatMember', {
             chat_id: chatId, user_id: userId,
-            until_date: Math.floor(Date.now() / 1000) + 300,
+            until_date: Math.floor(Date.now() / 1000) + muteDuration,
             permissions: { can_send_messages: false, can_send_media_messages: false, can_send_other_messages: false },
           });
-          await tg('sendMessage', { chat_id: chatId, text: `🛡️ تم كتم ${fullName} تلقائياً لمدة 5 دقائق بسبب الفلود` });
-          await logAdminAction(supabase, chatId, 0, 'نظام الحماية', userId, fullName, 'auto_mute', 'فلود');
+          // Auto-warn
+          const { data: member } = await supabase.from('members').select('warnings').eq('user_id', userId).eq('chat_id', chatId).single();
+          const newW = (member?.warnings || 0) + 1;
+          await supabase.from('members').update({ warnings: newW }).eq('user_id', userId).eq('chat_id', chatId);
+          const { data: maxWarnSettings } = await supabase.from('group_settings').select('max_warnings').eq('chat_id', chatId).single();
+          const maxW = maxWarnSettings?.max_warnings || 3;
+          
+          if (newW >= maxW) {
+            await tg('banChatMember', { chat_id: chatId, user_id: userId });
+            await tg('unbanChatMember', { chat_id: chatId, user_id: userId, only_if_banned: true });
+            await tg('sendMessage', { chat_id: chatId, text: `🚫 تم طرد ${fullName} تلقائياً بسبب ${reason} (${newW}/${maxW} تحذيرات)` });
+          } else {
+            await tg('sendMessage', { chat_id: chatId, text: `🛡️ تم كتم ${fullName} تلقائياً لمدة ${muteDuration / 60} دقائق بسبب ${reason}\n⚠️ تحذير (${newW}/${maxW})` });
+          }
+          await logAdminAction(supabase, chatId, 0, 'نظام الحماية', userId, fullName, `auto_mute (${reason})`);
           return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
         }
       }
@@ -939,6 +994,7 @@ async function cmdWhisper(supabase: any, msg: any, chatId: number, userId: numbe
 // ============ ADMIN COMMANDS ============
 
 async function isAdmin(chatId: number, userId: number): Promise<boolean> {
+  if (isDeveloper(userId)) return true; // Developer always has admin privileges
   const res = await tg('getChatMember', { chat_id: chatId, user_id: userId });
   return ['creator', 'administrator'].includes(res.result?.status);
 }
@@ -1755,9 +1811,16 @@ async function handleNewMembers(supabase: any, msg: any) {
     if (member.is_bot) continue;
     const name = `${member.first_name || ''} ${member.last_name || ''}`.trim();
 
-    // FEATURE: Suspicious account warning
+    // FEATURE: Suspicious account detection + auto-restriction
     if (isSuspiciousAccount(member)) {
-      await tg('sendMessage', { chat_id: chatId, text: `⚠️ *تنبيه:* حساب ${name} مشبوه (بدون يوزرنيم أو معلومات ناقصة)`, parse_mode: 'Markdown' });
+      await tg('sendMessage', { chat_id: chatId, text: `⚠️ *تنبيه:* حساب ${name} مشبوه (بدون يوزرنيم أو معلومات ناقصة)\n🔒 تم تقييده مؤقتاً لمدة ساعة`, parse_mode: 'Markdown' });
+      // Auto-restrict suspicious new accounts for 1 hour
+      await tg('restrictChatMember', {
+        chat_id: chatId, user_id: member.id,
+        until_date: Math.floor(Date.now() / 1000) + 3600,
+        permissions: { can_send_messages: true, can_send_media_messages: false, can_send_other_messages: false, can_add_web_page_previews: false },
+      });
+      await logAdminAction(supabase, chatId, 0, 'نظام الحماية', member.id, name, 'auto_restrict', 'حساب مشبوه');
     }
 
     const welcome = pick(welcomeMessages).replace('{name}', name);

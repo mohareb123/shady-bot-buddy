@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import DashboardLayout from "@/components/DashboardLayout";
@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Send, Image, Video, Link, BarChart3, Sticker } from "lucide-react";
+import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker";
@@ -19,6 +19,9 @@ export default function NotificationsPage() {
   const [pollQuestion, setPollQuestion] = useState("");
   const [pollOptions, setPollOptions] = useState(["", ""]);
   const [activeTab, setActiveTab] = useState<NotificationType>("text");
+  const [uploading, setUploading] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState("");
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -30,6 +33,35 @@ export default function NotificationsPage() {
       return data || [];
     },
   });
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const maxSize = 20 * 1024 * 1024; // 20MB
+    if (file.size > maxSize) {
+      toast({ title: "خطأ", description: "الحد الأقصى لحجم الملف 20 ميجابايت", variant: "destructive" });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const ext = file.name.split('.').pop();
+      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
+      const { error } = await supabase.storage.from("notification-media").upload(fileName, file);
+      if (error) throw error;
+
+      const { data: urlData } = supabase.storage.from("notification-media").getPublicUrl(fileName);
+      setMediaUrl(urlData.publicUrl);
+      setUploadedFileName(file.name);
+      toast({ title: "✅ تم رفع الملف بنجاح" });
+    } catch (err: any) {
+      toast({ title: "خطأ", description: err.message || "فشل رفع الملف", variant: "destructive" });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
 
   const sendNotification = useMutation({
     mutationFn: async (payload: any) => {
@@ -48,11 +80,22 @@ export default function NotificationsPage() {
     },
     onSuccess: () => {
       toast({ title: "✅ تم", description: "تم إرسال الإشعار لجميع المستخدمين" });
-      setMessage(""); setMediaUrl(""); setPollQuestion(""); setPollOptions(["", ""]);
+      setMessage(""); setMediaUrl(""); setPollQuestion(""); setPollOptions(["", ""]); setUploadedFileName("");
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
     onError: () => {
       toast({ title: "خطأ", description: "فشل إرسال الإشعار", variant: "destructive" });
+    },
+  });
+
+  const deleteNotification = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("notifications").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      toast({ title: "✅ تم حذف الإشعار" });
+      queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
   });
 
@@ -90,6 +133,9 @@ export default function NotificationsPage() {
     const opts = [...pollOptions]; opts[i] = v; setPollOptions(opts);
   };
 
+  const acceptsUpload = activeTab === "photo" || activeTab === "video" || activeTab === "sticker";
+  const fileAccept = activeTab === "photo" ? "image/*" : activeTab === "video" ? "video/*" : "*/*";
+
   return (
     <DashboardLayout>
       <div className="space-y-6">
@@ -105,7 +151,7 @@ export default function NotificationsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as NotificationType)}>
+            <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as NotificationType); setMediaUrl(""); setUploadedFileName(""); }}>
               <TabsList className="grid grid-cols-6 w-full">
                 <TabsTrigger value="text" className="text-xs gap-1"><Send className="w-3 h-3" />نص</TabsTrigger>
                 <TabsTrigger value="photo" className="text-xs gap-1"><Image className="w-3 h-3" />صورة</TabsTrigger>
@@ -120,12 +166,26 @@ export default function NotificationsPage() {
               </TabsContent>
 
               <TabsContent value="photo" className="space-y-3 mt-3">
-                <Input placeholder="رابط الصورة (URL)" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" />
+                <div className="flex gap-2">
+                  <Input placeholder="رابط الصورة أو ارفع ملف" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" className="flex-1" />
+                  <input ref={fileInputRef} type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                  <Button variant="outline" size="icon" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
                 <Textarea placeholder="نص توضيحي (اختياري)..." value={message} onChange={(e) => setMessage(e.target.value)} rows={2} dir="rtl" />
               </TabsContent>
 
               <TabsContent value="video" className="space-y-3 mt-3">
-                <Input placeholder="رابط الفيديو (URL)" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" />
+                <div className="flex gap-2">
+                  <Input placeholder="رابط الفيديو أو ارفع ملف" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" className="flex-1" />
+                  <input ref={fileInputRef} type="file" accept="video/*" onChange={handleFileUpload} className="hidden" />
+                  <Button variant="outline" size="icon" onClick={() => fileInputRef.current?.click()} disabled={uploading}>
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
                 <Textarea placeholder="نص توضيحي (اختياري)..." value={message} onChange={(e) => setMessage(e.target.value)} rows={2} dir="rtl" />
               </TabsContent>
 
@@ -150,9 +210,9 @@ export default function NotificationsPage() {
               </TabsContent>
             </Tabs>
 
-            <Button onClick={handleSend} disabled={sendNotification.isPending} className="gap-2">
+            <Button onClick={handleSend} disabled={sendNotification.isPending || uploading} className="gap-2">
               <Send className="w-4 h-4" />
-              {sendNotification.isPending ? "جاري الإرسال..." : "إرسال للجميع"}
+              {uploading ? "جاري الرفع..." : sendNotification.isPending ? "جاري الإرسال..." : "إرسال للجميع"}
             </Button>
           </CardContent>
         </Card>
@@ -166,12 +226,24 @@ export default function NotificationsPage() {
                 <CardContent className="p-4 space-y-2">
                   <p className="text-sm text-foreground break-words">{n.message}</p>
                   <div className="flex items-center justify-between">
-                    <Badge variant={n.is_sent ? "default" : "secondary"}>
-                      {n.is_sent ? "✅ تم الإرسال" : "⏳ قيد الإرسال"}
-                    </Badge>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(n.created_at).toLocaleString("ar-EG")}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={n.is_sent ? "default" : "secondary"}>
+                        {n.is_sent ? "✅ تم الإرسال" : "⏳ قيد الإرسال"}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(n.created_at).toLocaleString("ar-EG")}
+                      </span>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-destructive hover:text-destructive"
+                        onClick={() => deleteNotification.mutate(n.id)}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>

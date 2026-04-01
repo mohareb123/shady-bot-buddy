@@ -1,12 +1,17 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { ShieldCheck, ShieldOff } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
 
 export default function MembersPage() {
   const { isDeveloper, userChatId } = useAuth();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: members, isLoading } = useQuery({
     queryKey: ["members", userChatId, isDeveloper],
@@ -16,6 +21,36 @@ export default function MembersPage() {
       const { data } = await q;
       return data || [];
     },
+  });
+
+  const promoteMember = useMutation({
+    mutationFn: async ({ userId, chatId }: { userId: number; chatId: number }) => {
+      const { data, error } = await supabase.functions.invoke("telegram-bot", {
+        body: { action: "promote_member", user_id: userId, chat_id: chatId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "✅ تمت الترقية بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ["members"] });
+    },
+    onError: () => toast({ title: "خطأ", description: "فشلت الترقية", variant: "destructive" }),
+  });
+
+  const demoteMember = useMutation({
+    mutationFn: async ({ userId, chatId }: { userId: number; chatId: number }) => {
+      const { data, error } = await supabase.functions.invoke("telegram-bot", {
+        body: { action: "demote_member", user_id: userId, chat_id: chatId },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      toast({ title: "✅ تم التخفيض بنجاح" });
+      queryClient.invalidateQueries({ queryKey: ["members"] });
+    },
+    onError: () => toast({ title: "خطأ", description: "فشل التخفيض", variant: "destructive" }),
   });
 
   return (
@@ -43,6 +78,7 @@ export default function MembersPage() {
                       <th className="text-right p-3 font-medium text-muted-foreground">العملات</th>
                       <th className="text-right p-3 font-medium text-muted-foreground">الرسائل</th>
                       <th className="text-right p-3 font-medium text-muted-foreground">التحذيرات</th>
+                      {isDeveloper && <th className="text-right p-3 font-medium text-muted-foreground">إجراءات</th>}
                     </tr>
                   </thead>
                   <tbody>
@@ -56,6 +92,20 @@ export default function MembersPage() {
                         <td className="p-3">
                           {m.warnings > 0 ? <Badge variant="destructive">{m.warnings}</Badge> : <span className="text-muted-foreground">0</span>}
                         </td>
+                        {isDeveloper && (
+                          <td className="p-3">
+                            <div className="flex gap-1">
+                              <Button size="icon" variant="ghost" className="h-7 w-7" title="ترقية أدمن"
+                                onClick={() => promoteMember.mutate({ userId: m.user_id, chatId: m.chat_id })}>
+                                <ShieldCheck className="w-4 h-4 text-green-600" />
+                              </Button>
+                              <Button size="icon" variant="ghost" className="h-7 w-7" title="خفض أدمن"
+                                onClick={() => demoteMember.mutate({ userId: m.user_id, chatId: m.chat_id })}>
+                                <ShieldOff className="w-4 h-4 text-red-600" />
+                              </Button>
+                            </div>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -77,6 +127,18 @@ export default function MembersPage() {
                       <div>💬 {m.messages_count.toLocaleString("ar-EG")}</div>
                     </div>
                     {m.warnings > 0 && <Badge variant="destructive" className="text-xs">⚠️ {m.warnings} تحذيرات</Badge>}
+                    {isDeveloper && (
+                      <div className="flex gap-2 pt-1">
+                        <Button size="sm" variant="outline" className="text-xs gap-1"
+                          onClick={() => promoteMember.mutate({ userId: m.user_id, chatId: m.chat_id })}>
+                          <ShieldCheck className="w-3 h-3" /> ترقية
+                        </Button>
+                        <Button size="sm" variant="outline" className="text-xs gap-1"
+                          onClick={() => demoteMember.mutate({ userId: m.user_id, chatId: m.chat_id })}>
+                          <ShieldOff className="w-3 h-3" /> خفض
+                        </Button>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               ))}
