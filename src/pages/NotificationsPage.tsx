@@ -8,7 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload } from "lucide-react";
+import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload, MessageSquareX } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker";
@@ -22,6 +22,7 @@ export default function NotificationsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const stickerInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -38,7 +39,7 @@ export default function NotificationsPage() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxSize = 20 * 1024 * 1024; // 20MB
+    const maxSize = 20 * 1024 * 1024;
     if (file.size > maxSize) {
       toast({ title: "خطأ", description: "الحد الأقصى لحجم الملف 20 ميجابايت", variant: "destructive" });
       return;
@@ -60,13 +61,14 @@ export default function NotificationsPage() {
     } finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (stickerInputRef.current) stickerInputRef.current.value = "";
     }
   };
 
   const sendNotification = useMutation({
     mutationFn: async (payload: any) => {
       const msgText = payload.type === "poll"
-        ? `📊 استطلاع: ${payload.question}`
+        ? `📊 استفتاء: ${payload.question}`
         : payload.message || payload.caption || mediaUrl;
 
       const { data, error } = await supabase.from("notifications").insert({
@@ -83,8 +85,8 @@ export default function NotificationsPage() {
       setMessage(""); setMediaUrl(""); setPollQuestion(""); setPollOptions(["", ""]); setUploadedFileName("");
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
     },
-    onError: () => {
-      toast({ title: "خطأ", description: "فشل إرسال الإشعار", variant: "destructive" });
+    onError: (err: any) => {
+      toast({ title: "خطأ", description: err.message || "فشل إرسال الإشعار", variant: "destructive" });
     },
   });
 
@@ -96,6 +98,22 @@ export default function NotificationsPage() {
     onSuccess: () => {
       toast({ title: "✅ تم حذف الإشعار" });
       queryClient.invalidateQueries({ queryKey: ["notifications"] });
+    },
+  });
+
+  const deleteFromTelegram = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke("telegram-bot", {
+        body: { action: "delete_broadcast" },
+      });
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: (data: any) => {
+      toast({ title: "✅ تم", description: `تم حذف ${data?.deleted || 0} رسالة من تليغرام` });
+    },
+    onError: () => {
+      toast({ title: "خطأ", description: "فشل حذف الرسائل من تليغرام", variant: "destructive" });
     },
   });
 
@@ -133,15 +151,24 @@ export default function NotificationsPage() {
     const opts = [...pollOptions]; opts[i] = v; setPollOptions(opts);
   };
 
-  const acceptsUpload = activeTab === "photo" || activeTab === "video" || activeTab === "sticker";
-  const fileAccept = activeTab === "photo" ? "image/*" : activeTab === "video" ? "video/*" : "*/*";
-
   return (
     <DashboardLayout>
       <div className="space-y-6">
-        <div>
-          <h2 className="text-2xl font-bold text-foreground">الإشعارات</h2>
-          <p className="text-muted-foreground mt-1">أرسل إشعارات متنوعة لجميع مستخدمي البوت</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-2xl font-bold text-foreground">الإشعارات</h2>
+            <p className="text-muted-foreground mt-1">أرسل إشعارات متنوعة لجميع مستخدمي البوت</p>
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            className="gap-2"
+            onClick={() => deleteFromTelegram.mutate()}
+            disabled={deleteFromTelegram.isPending}
+          >
+            <MessageSquareX className="w-4 h-4" />
+            {deleteFromTelegram.isPending ? "جاري الحذف..." : "حذف من تليغرام"}
+          </Button>
         </div>
 
         <Card>
@@ -205,8 +232,15 @@ export default function NotificationsPage() {
               </TabsContent>
 
               <TabsContent value="sticker" className="space-y-3 mt-3">
-                <Input placeholder="معرّف الملصق (file_id)" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" />
-                <p className="text-xs text-muted-foreground">يمكنك الحصول على file_id عن طريق إرسال الملصق للبوت في الخاص</p>
+                <div className="flex gap-2">
+                  <Input placeholder="معرّف الملصق (file_id) أو ارفع ملف webp" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" className="flex-1" />
+                  <input ref={stickerInputRef} type="file" accept=".webp,.png,.tgs,.webm,image/webp,image/png" onChange={handleFileUpload} className="hidden" />
+                  <Button variant="outline" size="icon" onClick={() => stickerInputRef.current?.click()} disabled={uploading}>
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
+                <p className="text-xs text-muted-foreground">يمكنك رفع ملصق (.webp) أو إدخال file_id مباشرة</p>
               </TabsContent>
             </Tabs>
 
@@ -226,11 +260,9 @@ export default function NotificationsPage() {
                 <CardContent className="p-4 space-y-2">
                   <p className="text-sm text-foreground break-words">{n.message}</p>
                   <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={n.is_sent ? "default" : "secondary"}>
-                        {n.is_sent ? "✅ تم الإرسال" : "⏳ قيد الإرسال"}
-                      </Badge>
-                    </div>
+                    <Badge variant={n.is_sent ? "default" : "secondary"}>
+                      {n.is_sent ? "✅ تم الإرسال" : "⏳ قيد الإرسال"}
+                    </Badge>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">
                         {new Date(n.created_at).toLocaleString("ar-EG")}
