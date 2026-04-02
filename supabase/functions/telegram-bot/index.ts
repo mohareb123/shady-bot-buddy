@@ -1150,8 +1150,8 @@ async function cmdAll(chatId: number, userId: number) {
   if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
   const res = await tg('getChatAdministrators', { chat_id: chatId });
   if (!res.result) return;
-  const mentions = res.result.map((a: any) => a.user.first_name || a.user.username).join('، ');
-  await tg('sendMessage', { chat_id: chatId, text: `📢 *مناداة المشرفين*\n\n${mentions}`, parse_mode: 'Markdown' });
+  const mentions = res.result.map((a: any) => `<a href="tg://user?id=${a.user.id}">${a.user.first_name || a.user.username}</a>`).join(' | ');
+  await tg('sendMessage', { chat_id: chatId, text: `📢 <b>مناداة المشرفين</b>\n\n${mentions}`, parse_mode: 'HTML' });
 }
 
 async function cmdCalc(chatId: number, text: string) {
@@ -1196,6 +1196,9 @@ async function handleBroadcast(supabase: any, payload: any) {
           break;
         case 'video':
           result = await tg('sendVideo', { chat_id: chatId, video: payload.video_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'HTML' });
+          break;
+        case 'file':
+          result = await tg('sendDocument', { chat_id: chatId, document: payload.file_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 ملف', parse_mode: 'HTML' });
           break;
         case 'poll':
           result = await tg('sendPoll', { chat_id: chatId, question: payload.question, options: payload.options, is_anonymous: true });
@@ -1266,11 +1269,23 @@ async function cmdCallAll(supabase: any, chatId: number, userId: number) {
   if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
   const { data: members } = await supabase.from('members').select('full_name, username, user_id').eq('chat_id', chatId);
   if (!members?.length) return tg('sendMessage', { chat_id: chatId, text: '❌ لا يوجد أعضاء' });
+  
+  // Build mention text using tg://user?id= links for ALL members (works even if offline/no username)
+  const mentions = members.map((m: any) => `<a href="tg://user?id=${m.user_id}">${m.full_name || m.username || m.user_id}</a>`);
+  
+  // Split into chunks of 5 members per message to avoid Telegram limits
   const chunks: string[][] = [];
-  for (let i = 0; i < members.length; i += 5) {
-    chunks.push(members.slice(i, i + 5).map((m: any) => m.username ? `@${m.username}` : `[${m.full_name || m.user_id}](tg://user?id=${m.user_id})`));
+  for (let i = 0; i < mentions.length; i += 5) {
+    chunks.push(mentions.slice(i, i + 5));
   }
-  for (const chunk of chunks) { await tg('sendMessage', { chat_id: chatId, text: `📢 ${chunk.join(' ')}`, parse_mode: 'Markdown' }); }
+  
+  await tg('sendMessage', { chat_id: chatId, text: `📢 <b>مناداة جميع الأعضاء (${members.length} عضو)</b>`, parse_mode: 'HTML' });
+  
+  for (const chunk of chunks) {
+    await tg('sendMessage', { chat_id: chatId, text: `📢 ${chunk.join(' | ')}`, parse_mode: 'HTML' });
+    // Small delay between batches to avoid rate limiting
+    if (chunks.length > 5) await new Promise(r => setTimeout(r, 500));
+  }
 }
 
 async function cmdPin(chatId: number, userId: number, msg: any) {

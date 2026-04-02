@@ -8,10 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload, MessageSquareX } from "lucide-react";
+import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload, MessageSquareX, FileUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker";
+type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker" | "file";
 
 export default function NotificationsPage() {
   const [message, setMessage] = useState("");
@@ -22,6 +22,7 @@ export default function NotificationsPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadedFileName, setUploadedFileName] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const anyFileInputRef = useRef<HTMLInputElement>(null);
   const stickerInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -35,13 +36,13 @@ export default function NotificationsPage() {
     },
   });
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, maxSizeMB = 50) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxSize = 20 * 1024 * 1024;
+    const maxSize = maxSizeMB * 1024 * 1024;
     if (file.size > maxSize) {
-      toast({ title: "خطأ", description: "الحد الأقصى لحجم الملف 20 ميجابايت", variant: "destructive" });
+      toast({ title: "خطأ", description: `الحد الأقصى لحجم الملف ${maxSizeMB} ميجابايت`, variant: "destructive" });
       return;
     }
 
@@ -49,7 +50,10 @@ export default function NotificationsPage() {
     try {
       const ext = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
-      const { error } = await supabase.storage.from("notification-media").upload(fileName, file);
+      const { error } = await supabase.storage.from("notification-media").upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
       if (error) throw error;
 
       const { data: urlData } = supabase.storage.from("notification-media").getPublicUrl(fileName);
@@ -62,6 +66,7 @@ export default function NotificationsPage() {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (stickerInputRef.current) stickerInputRef.current.value = "";
+      if (anyFileInputRef.current) anyFileInputRef.current.value = "";
     }
   };
 
@@ -143,6 +148,10 @@ export default function NotificationsPage() {
         if (!mediaUrl.trim()) return;
         sendNotification.mutate({ type: "sticker", sticker_id: mediaUrl.trim() });
         break;
+      case "file":
+        if (!mediaUrl.trim()) return;
+        sendNotification.mutate({ type: "file", file_url: mediaUrl.trim(), caption: message.trim(), file_name: uploadedFileName });
+        break;
     }
   };
 
@@ -179,10 +188,11 @@ export default function NotificationsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as NotificationType); setMediaUrl(""); setUploadedFileName(""); }}>
-              <TabsList className="grid grid-cols-6 w-full">
+            <TabsList className="grid grid-cols-7 w-full">
                 <TabsTrigger value="text" className="text-xs gap-1"><Send className="w-3 h-3" />نص</TabsTrigger>
                 <TabsTrigger value="photo" className="text-xs gap-1"><Image className="w-3 h-3" />صورة</TabsTrigger>
                 <TabsTrigger value="video" className="text-xs gap-1"><Video className="w-3 h-3" />فيديو</TabsTrigger>
+                <TabsTrigger value="file" className="text-xs gap-1"><FileUp className="w-3 h-3" />ملف</TabsTrigger>
                 <TabsTrigger value="link" className="text-xs gap-1"><Link className="w-3 h-3" />رابط</TabsTrigger>
                 <TabsTrigger value="poll" className="text-xs gap-1"><BarChart3 className="w-3 h-3" />استفتاء</TabsTrigger>
                 <TabsTrigger value="sticker" className="text-xs gap-1"><Sticker className="w-3 h-3" />ملصق</TabsTrigger>
@@ -241,6 +251,19 @@ export default function NotificationsPage() {
                 </div>
                 {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
                 <p className="text-xs text-muted-foreground">يمكنك رفع ملصق (.webp) أو إدخال file_id مباشرة</p>
+              </TabsContent>
+
+              <TabsContent value="file" className="space-y-3 mt-3">
+                <div className="flex gap-2">
+                  <Input placeholder="رابط الملف أو ارفع ملف" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" className="flex-1" />
+                  <input ref={anyFileInputRef} type="file" onChange={(e) => handleFileUpload(e, 50)} className="hidden" />
+                  <Button variant="outline" size="icon" onClick={() => anyFileInputRef.current?.click()} disabled={uploading}>
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
+                <Textarea placeholder="نص توضيحي (اختياري)..." value={message} onChange={(e) => setMessage(e.target.value)} rows={2} dir="rtl" />
+                <p className="text-xs text-muted-foreground">يدعم جميع الصيغ: PDF, ZIP, APK, EXE, PY, JS... إلخ (حد أقصى 50 ميجابايت)</p>
               </TabsContent>
             </Tabs>
 
