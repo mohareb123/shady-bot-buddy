@@ -252,6 +252,19 @@ export default function NotificationsPage() {
                 {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
                 <p className="text-xs text-muted-foreground">يمكنك رفع ملصق (.webp) أو إدخال file_id مباشرة</p>
               </TabsContent>
+
+              <TabsContent value="file" className="space-y-3 mt-3">
+                <div className="flex gap-2">
+                  <Input placeholder="رابط الملف أو ارفع ملف" value={mediaUrl} onChange={(e) => setMediaUrl(e.target.value)} dir="ltr" className="flex-1" />
+                  <input ref={anyFileInputRef} type="file" onChange={(e) => handleFileUpload(e, 50)} className="hidden" />
+                  <Button variant="outline" size="icon" onClick={() => anyFileInputRef.current?.click()} disabled={uploading}>
+                    <Upload className="w-4 h-4" />
+                  </Button>
+                </div>
+                {uploadedFileName && <p className="text-xs text-muted-foreground">📎 {uploadedFileName}</p>}
+                <Textarea placeholder="نص توضيحي (اختياري)..." value={message} onChange={(e) => setMessage(e.target.value)} rows={2} dir="rtl" />
+                <p className="text-xs text-muted-foreground">يدعم جميع الصيغ: PDF, ZIP, APK, EXE, PY, JS... إلخ (حد أقصى 50 ميجابايت)</p>
+              </TabsContent>
             </Tabs>
 
             <Button onClick={handleSend} disabled={sendNotification.isPending || uploading} className="gap-2">
