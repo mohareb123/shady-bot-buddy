@@ -188,10 +188,11 @@ export default function NotificationsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as NotificationType); setMediaUrl(""); setUploadedFileName(""); }}>
-              <TabsList className="grid grid-cols-6 w-full">
+            <TabsList className="grid grid-cols-7 w-full">
                 <TabsTrigger value="text" className="text-xs gap-1"><Send className="w-3 h-3" />نص</TabsTrigger>
                 <TabsTrigger value="photo" className="text-xs gap-1"><Image className="w-3 h-3" />صورة</TabsTrigger>
                 <TabsTrigger value="video" className="text-xs gap-1"><Video className="w-3 h-3" />فيديو</TabsTrigger>
+                <TabsTrigger value="file" className="text-xs gap-1"><FileUp className="w-3 h-3" />ملف</TabsTrigger>
                 <TabsTrigger value="link" className="text-xs gap-1"><Link className="w-3 h-3" />رابط</TabsTrigger>
                 <TabsTrigger value="poll" className="text-xs gap-1"><BarChart3 className="w-3 h-3" />استفتاء</TabsTrigger>
                 <TabsTrigger value="sticker" className="text-xs gap-1"><Sticker className="w-3 h-3" />ملصق</TabsTrigger>
