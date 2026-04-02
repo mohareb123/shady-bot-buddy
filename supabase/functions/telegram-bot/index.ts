@@ -1150,8 +1150,8 @@ async function cmdAll(chatId: number, userId: number) {
   if (!(await isAdmin(chatId, userId))) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمشرفين فقط' });
   const res = await tg('getChatAdministrators', { chat_id: chatId });
   if (!res.result) return;
-  const mentions = res.result.map((a: any) => a.user.first_name || a.user.username).join('، ');
-  await tg('sendMessage', { chat_id: chatId, text: `📢 *مناداة المشرفين*\n\n${mentions}`, parse_mode: 'Markdown' });
+  const mentions = res.result.map((a: any) => `<a href="tg://user?id=${a.user.id}">${a.user.first_name || a.user.username}</a>`).join(' | ');
+  await tg('sendMessage', { chat_id: chatId, text: `📢 <b>مناداة المشرفين</b>\n\n${mentions}`, parse_mode: 'HTML' });
 }
 
 async function cmdCalc(chatId: number, text: string) {
