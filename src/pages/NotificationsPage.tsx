@@ -8,10 +8,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload, MessageSquareX } from "lucide-react";
+import { Bell, Send, Image, Video, Link, BarChart3, Sticker, Trash2, Upload, MessageSquareX, FileUp } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
-type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker";
+type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker" | "file";
 
 export default function NotificationsPage() {
   const [message, setMessage] = useState("");
