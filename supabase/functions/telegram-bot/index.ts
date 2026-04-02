@@ -1197,6 +1197,9 @@ async function handleBroadcast(supabase: any, payload: any) {
         case 'video':
           result = await tg('sendVideo', { chat_id: chatId, video: payload.video_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'HTML' });
           break;
+        case 'file':
+          result = await tg('sendDocument', { chat_id: chatId, document: payload.file_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 ملف', parse_mode: 'HTML' });
+          break;
         case 'poll':
           result = await tg('sendPoll', { chat_id: chatId, question: payload.question, options: payload.options, is_anonymous: true });
           break;
