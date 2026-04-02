@@ -36,13 +36,13 @@ export default function NotificationsPage() {
     },
   });
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, maxSizeMB = 50) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const maxSize = 20 * 1024 * 1024;
+    const maxSize = maxSizeMB * 1024 * 1024;
     if (file.size > maxSize) {
-      toast({ title: "خطأ", description: "الحد الأقصى لحجم الملف 20 ميجابايت", variant: "destructive" });
+      toast({ title: "خطأ", description: `الحد الأقصى لحجم الملف ${maxSizeMB} ميجابايت`, variant: "destructive" });
       return;
     }
 
@@ -50,7 +50,10 @@ export default function NotificationsPage() {
     try {
       const ext = file.name.split('.').pop();
       const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
-      const { error } = await supabase.storage.from("notification-media").upload(fileName, file);
+      const { error } = await supabase.storage.from("notification-media").upload(fileName, file, {
+        cacheControl: '3600',
+        upsert: false,
+      });
       if (error) throw error;
 
       const { data: urlData } = supabase.storage.from("notification-media").getPublicUrl(fileName);
@@ -63,6 +66,7 @@ export default function NotificationsPage() {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
       if (stickerInputRef.current) stickerInputRef.current.value = "";
+      if (anyFileInputRef.current) anyFileInputRef.current.value = "";
     }
   };
 
