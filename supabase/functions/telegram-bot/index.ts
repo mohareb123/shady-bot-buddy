@@ -385,7 +385,24 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
-    // Check if link code is valid (pre-check before signup)
+    // Handle delete broadcast messages from Telegram
+    if (body.action === 'delete_broadcast') {
+      const supabase = getSupabase();
+      const { data: msgs } = await supabase.from('bot_messages').select('chat_id, message_id').order('created_at', { ascending: false }).limit(200);
+      if (msgs) {
+        for (const m of msgs) {
+          try { await tg('deleteMessage', { chat_id: m.chat_id, message_id: m.message_id }); } catch {}
+        }
+      }
+      return new Response(JSON.stringify({ ok: true, deleted: msgs?.length || 0 }), { headers: corsHeaders });
+    }
+
+    // Handle get sticker file_id
+    if (body.action === 'get_sticker_id') {
+      // Forward sticker info - the file_id is already in the sticker message
+      return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+
     if (body.action === 'check_link_code') {
       const supabase = getSupabase();
       const code = (body.code || '').trim().toUpperCase();
