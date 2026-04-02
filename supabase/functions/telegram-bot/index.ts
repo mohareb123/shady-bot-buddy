@@ -1168,28 +1168,39 @@ async function handleBroadcast(supabase: any, payload: any) {
   const uniqueChats = [...new Set(chats.map((c: any) => c.chat_id))];
   const notificationId = payload.notification_id;
   const type = payload.type || 'text';
+  const sentMessages: { chat_id: number; message_id: number }[] = [];
 
   for (const chatId of uniqueChats) {
     try {
+      let result: any;
       switch (type) {
         case 'photo':
-          await tg('sendPhoto', { chat_id: chatId, photo: payload.photo_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'Markdown' });
+          result = await tg('sendPhoto', { chat_id: chatId, photo: payload.photo_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'HTML' });
           break;
         case 'video':
-          await tg('sendVideo', { chat_id: chatId, video: payload.video_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'Markdown' });
+          result = await tg('sendVideo', { chat_id: chatId, video: payload.video_url, caption: payload.caption ? `📢 ${payload.caption}` : '📢 إشعار', parse_mode: 'HTML' });
           break;
         case 'poll':
-          await tg('sendPoll', { chat_id: chatId, question: payload.question, options: payload.options, is_anonymous: true });
+          result = await tg('sendPoll', { chat_id: chatId, question: payload.question, options: payload.options, is_anonymous: true });
           break;
         case 'sticker':
-          await tg('sendSticker', { chat_id: chatId, sticker: payload.sticker_id });
+          result = await tg('sendSticker', { chat_id: chatId, sticker: payload.sticker_id });
           break;
         default:
-          await tg('sendMessage', { chat_id: chatId, text: `📢 *إشعار هام*\n\n${payload.message}`, parse_mode: 'Markdown' });
+          result = await tg('sendMessage', { chat_id: chatId, text: `📢 <b>إشعار هام</b>\n\n${payload.message}`, parse_mode: 'HTML' });
+      }
+      if (result?.result?.message_id) {
+        sentMessages.push({ chat_id: chatId as number, message_id: result.result.message_id });
       }
     } catch (e) { console.error(`Failed to send to ${chatId}:`, e); }
   }
-  if (notificationId) await supabase.from('notifications').update({ is_sent: true }).eq('id', notificationId);
+  if (notificationId) {
+    await supabase.from('notifications').update({ is_sent: true }).eq('id', notificationId);
+    // Store sent message IDs for deletion capability
+    for (const sm of sentMessages) {
+      await supabase.from('bot_messages').insert({ chat_id: sm.chat_id, message_id: sm.message_id });
+    }
+  }
 }
 
 async function cmdBroadcast(supabase: any, chatId: number, userId: number, text: string) {
