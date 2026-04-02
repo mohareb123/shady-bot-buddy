@@ -148,6 +148,10 @@ export default function NotificationsPage() {
         if (!mediaUrl.trim()) return;
         sendNotification.mutate({ type: "sticker", sticker_id: mediaUrl.trim() });
         break;
+      case "file":
+        if (!mediaUrl.trim()) return;
+        sendNotification.mutate({ type: "file", file_url: mediaUrl.trim(), caption: message.trim(), file_name: uploadedFileName });
+        break;
     }
   };
 
