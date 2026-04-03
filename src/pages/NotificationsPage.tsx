@@ -72,18 +72,11 @@ export default function NotificationsPage() {
 
   const sendNotification = useMutation({
     mutationFn: async (payload: any) => {
-      const msgText = payload.type === "poll"
-        ? `📊 استفتاء: ${payload.question}`
-        : payload.message || payload.caption || mediaUrl;
-
-      const { data, error } = await supabase.from("notifications").insert({
-        message: msgText, created_by: 6570434162, is_sent: false,
-      }).select().single();
-      if (error) throw error;
-
-      return await supabase.functions.invoke("telegram-bot", {
-        body: { action: "broadcast", notification_id: data.id, ...payload },
+      const { data, error } = await supabase.functions.invoke("telegram-bot", {
+        body: { action: "broadcast", ...payload },
       });
+      if (error) throw error;
+      return data;
     },
     onSuccess: () => {
       toast({ title: "✅ تم", description: "تم إرسال الإشعار لجميع المستخدمين" });

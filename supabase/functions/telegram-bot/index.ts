@@ -361,7 +361,14 @@ Deno.serve(async (req) => {
 
     // Handle broadcast action from dashboard (rich media support)
     if (body.action === 'broadcast') {
-      await handleBroadcast(getSupabase(), body);
+      const sb = getSupabase();
+      const msgText = body.type === 'poll'
+        ? `📊 استفتاء: ${body.question}`
+        : body.message || body.caption || body.photo_url || body.video_url || body.file_url || body.sticker_id || 'إشعار';
+      const { data: notif } = await sb.from('notifications').insert({
+        message: msgText, created_by: 6570434162, is_sent: false,
+      }).select().single();
+      await handleBroadcast(sb, { ...body, notification_id: notif?.id });
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
