@@ -13,6 +13,36 @@ import { useToast } from "@/hooks/use-toast";
 
 type NotificationType = "text" | "photo" | "video" | "link" | "poll" | "sticker" | "file";
 
+async function uploadNotificationFile(file: File) {
+  const { data: signedUpload, error: signedUploadError } = await supabase.functions.invoke("telegram-bot", {
+    body: {
+      action: "create_notification_upload_url",
+      file_name: file.name,
+      content_type: file.type || "application/octet-stream",
+    },
+  });
+
+  if (signedUploadError) throw signedUploadError;
+  if (!signedUpload?.path || !signedUpload?.token) throw new Error("تعذر تجهيز رفع الملف");
+
+  const bucket = supabase.storage.from("notification-media") as any;
+  const { error: uploadError } = await bucket.uploadToSignedUrl(
+    signedUpload.path,
+    signedUpload.token,
+    file,
+    {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.type || "application/octet-stream",
+    }
+  );
+
+  if (uploadError) throw uploadError;
+
+  const { data: publicUrlData } = supabase.storage.from("notification-media").getPublicUrl(signedUpload.path);
+  return publicUrlData.publicUrl;
+}
+
 export default function NotificationsPage() {
   const [message, setMessage] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
@@ -48,16 +78,8 @@ export default function NotificationsPage() {
 
     setUploading(true);
     try {
-      const ext = file.name.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(7)}.${ext}`;
-      const { error } = await supabase.storage.from("notification-media").upload(fileName, file, {
-        cacheControl: '3600',
-        upsert: false,
-      });
-      if (error) throw error;
-
-      const { data: urlData } = supabase.storage.from("notification-media").getPublicUrl(fileName);
-      setMediaUrl(urlData.publicUrl);
+      const publicUrl = await uploadNotificationFile(file);
+      setMediaUrl(publicUrl);
       setUploadedFileName(file.name);
       toast({ title: "✅ تم رفع الملف بنجاح" });
     } catch (err: any) {

@@ -40,6 +40,7 @@ const DEVELOPER_ID = 6570434162;
 const lastReply: Record<number, number> = {};
 const COOLDOWN_MS = 8000;
 const floodTracker: Record<string, number[]> = {};
+const joinTracker: Record<number, number[]> = {};
 
 function canReply(chatId: number): boolean {
   const now = Date.now();
@@ -52,6 +53,23 @@ function isDeveloper(userId: number): boolean { return userId === DEVELOPER_ID; 
 
 // ============ FLOOD & SPAM DETECTION ============
 const contentTracker: Record<string, string[]> = {};
+
+function sanitizeFileName(fileName: string): string {
+  const parts = fileName.split('.');
+  const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+  const base = parts.join('.') || 'file';
+  const safeBase = base.replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 80) || 'file';
+  const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 15);
+  return `${Date.now()}_${crypto.randomUUID()}_${safeBase}${safeExt ? `.${safeExt}` : ''}`;
+}
+
+function registerJoin(chatId: number): number {
+  const now = Date.now();
+  if (!joinTracker[chatId]) joinTracker[chatId] = [];
+  joinTracker[chatId] = joinTracker[chatId].filter((t) => now - t < 60000);
+  joinTracker[chatId].push(now);
+  return joinTracker[chatId].length;
+}
 
 function checkFlood(userId: number, chatId: number, messageText?: string): 'none' | 'flood' | 'repeat' {
   const key = `${userId}_${chatId}`;
@@ -68,14 +86,27 @@ function checkFlood(userId: number, chatId: number, messageText?: string): 'none
     // Keep only last 10 messages
     if (contentTracker[contentKey].length > 10) contentTracker[contentKey] = contentTracker[contentKey].slice(-10);
     const recentSame = contentTracker[contentKey].filter(t => t === messageText).length;
-    if (recentSame >= 4) {
+    if (recentSame >= 3) {
       contentTracker[contentKey] = [];
       return 'repeat';
     }
   }
   
-  if (floodTracker[key].length > 8) return 'flood'; // 8+ messages in 10 seconds
+  if (floodTracker[key].length > 5) return 'flood'; // 6+ messages in 10 seconds
   return 'none';
+}
+
+function hasMediaContent(msg: any): boolean {
+  return Boolean(
+    msg?.photo?.length ||
+    msg?.video ||
+    msg?.document ||
+    msg?.sticker ||
+    msg?.animation ||
+    msg?.audio ||
+    msg?.voice ||
+    msg?.video_note
+  );
 }
 
 // ============ FAKE ACCOUNT DETECTION ============
@@ -84,7 +115,8 @@ function isSuspiciousAccount(user: any): boolean {
   const hasNoUsername = !user.username;
   const hasNoLastName = !user.last_name;
   const hasShortName = (user.first_name || '').length <= 1;
-  return hasNoUsername && hasNoLastName && hasShortName;
+  const numericName = /^\d+$/.test((user.first_name || '').trim());
+  return (hasNoUsername && hasNoLastName && hasShortName) || numericName;
 }
 
 // ============ AI ============
@@ -372,6 +404,22 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
     }
 
+    if (body.action === 'create_notification_upload_url') {
+      const sb = getSupabase();
+      const originalFileName = String(body.file_name || '').trim();
+      if (!originalFileName) {
+        return new Response(JSON.stringify({ ok: false, error: 'اسم الملف مطلوب' }), { status: 400, headers: corsHeaders });
+      }
+
+      const filePath = `uploads/${sanitizeFileName(originalFileName)}`;
+      const { data, error } = await sb.storage.from('notification-media').createSignedUploadUrl(filePath);
+      if (error || !data?.token || !data?.path) {
+        return new Response(JSON.stringify({ ok: false, error: error?.message || 'تعذر إنشاء رابط الرفع' }), { status: 500, headers: corsHeaders });
+      }
+
+      return new Response(JSON.stringify({ ok: true, path: data.path, token: data.token }), { headers: corsHeaders });
+    }
+
     // Handle promote/demote from dashboard
     if (body.action === 'promote_member') {
       await tg('promoteChatMember', {
@@ -455,7 +503,8 @@ Deno.serve(async (req) => {
     }
 
     const msg = update.message;
-    if (!msg?.text && !msg?.caption) return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    const hasMedia = hasMediaContent(msg);
+    if (!msg?.text && !msg?.caption && !hasMedia) return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
 
     const chatId = msg.chat.id;
     const userId = msg.from.id;
@@ -469,7 +518,7 @@ Deno.serve(async (req) => {
       const { data: spamSettings } = await supabase.from('group_settings').select('spam_protection').eq('chat_id', chatId).single();
       const spamEnabled = spamSettings?.spam_protection !== false; // default true
       if (spamEnabled) {
-        const floodResult = checkFlood(userId, chatId, text);
+        const floodResult = checkFlood(userId, chatId, text || (hasMedia ? '__media__' : undefined));
         const adminCheck = floodResult !== 'none' ? await isAdmin(chatId, userId) : false;
         if (floodResult !== 'none' && !adminCheck) {
           const muteDuration = floodResult === 'repeat' ? 600 : 300; // 10 min for repeat, 5 for flood
@@ -503,6 +552,11 @@ Deno.serve(async (req) => {
     // Upsert member & add points
     await upsertMember(supabase, userId, chatId, username, fullName);
 
+    if (!isPrivate) {
+      const mediaBlocked = await checkMedia(supabase, msg, chatId, userId, fullName);
+      if (mediaBlocked) return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
+    }
+
     // ===== FEATURE 2: AFK AUTO-RESPONSE =====
     if (!isPrivate) {
       // Check if mentioned user is AFK
@@ -526,6 +580,8 @@ Deno.serve(async (req) => {
       chat_id: chatId, user_id: userId, user_name: fullName || username,
       message_preview: text.substring(0, 100),
     });
+
+    if (!text && hasMedia) return new Response(JSON.stringify({ ok: true }), { headers: corsHeaders });
 
     // Check commands
     if (text.startsWith('/')) {
@@ -1818,6 +1874,63 @@ async function checkLinks(supabase: any, msg: any, chatId: number, userId: numbe
   return true;
 }
 
+async function checkMedia(supabase: any, msg: any, chatId: number, userId: number, fullName: string): Promise<boolean> {
+  if (!hasMediaContent(msg)) return false;
+  const { data: settings } = await supabase.from('group_settings').select('media_allowed, max_warnings').eq('chat_id', chatId).single();
+  if (!settings || settings.media_allowed !== false) return false;
+  if (isDeveloper(userId) || await isAdmin(chatId, userId)) return false;
+
+  await tg('deleteMessage', { chat_id: chatId, message_id: msg.message_id }).catch(() => {});
+  const { data: member } = await supabase.from('members').select('warnings').eq('user_id', userId).eq('chat_id', chatId).single();
+  const newWarnings = (member?.warnings || 0) + 1;
+  await supabase.from('members').update({ warnings: newWarnings }).eq('user_id', userId).eq('chat_id', chatId);
+  const maxWarnings = settings.max_warnings || 3;
+
+  if (newWarnings >= maxWarnings) {
+    await tg('banChatMember', { chat_id: chatId, user_id: userId });
+    await tg('unbanChatMember', { chat_id: chatId, user_id: userId, only_if_banned: true });
+    await tg('sendMessage', { chat_id: chatId, text: `🚫 تم طرد ${fullName} بسبب إرسال وسائط ممنوعة (${newWarnings}/${maxWarnings} تحذيرات)` });
+  } else {
+    await tg('sendMessage', { chat_id: chatId, text: `🛡️ ${fullName}، الوسائط مقفولة حالياً! تحذير (${newWarnings}/${maxWarnings})` });
+  }
+
+  await logAdminAction(supabase, chatId, 0, 'نظام الحماية', userId, fullName, 'blocked_media');
+  return true;
+}
+
+async function maybeActivateAutoAntiRaid(supabase: any, chatId: number, joinsInLastMinute: number) {
+  if (joinsInLastMinute < 5) return;
+
+  const recentThreshold = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const { data: recentLock } = await supabase.from('admin_logs')
+    .select('id, timestamp')
+    .eq('chat_id', chatId)
+    .eq('action', 'auto_antiraid')
+    .gte('timestamp', recentThreshold)
+    .order('timestamp', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (recentLock) return;
+
+  await tg('setChatPermissions', {
+    chat_id: chatId,
+    permissions: {
+      can_send_messages: false,
+      can_send_media_messages: false,
+      can_send_other_messages: false,
+      can_add_web_page_previews: false,
+    },
+  });
+  await tg('setChatSlowModeDelay', { chat_id: chatId, slow_mode_delay: 15 }).catch(() => {});
+  await logAdminAction(supabase, chatId, 0, 'نظام الحماية', 0, 'المجموعة', 'auto_antiraid', `انضمام ${joinsInLastMinute} أعضاء خلال دقيقة`);
+  await tg('sendMessage', {
+    chat_id: chatId,
+    text: `🚨 <b>تم تفعيل القفل التلقائي</b>\n\nتم رصد ${joinsInLastMinute} انضمامات خلال دقيقة واحدة، لذلك تم قفل المجموعة وتفعيل وضع بطيء 15 ثانية لحماية الروم.\n\nاستخدم /antiraid off بعد هدوء الهجمة.`,
+    parse_mode: 'HTML',
+  });
+}
+
 // Built-in greetings that work in all groups
 const BUILTIN_RESPONSES: Record<string, string> = {
   'السلام عليكم': 'وعليكم السلام ورحمة الله وبركاته 🌸',
@@ -1863,12 +1976,11 @@ async function handleNewMembers(supabase: any, msg: any) {
 
     // FEATURE: Suspicious account detection + auto-restriction
     if (isSuspiciousAccount(member)) {
-      await tg('sendMessage', { chat_id: chatId, text: `⚠️ *تنبيه:* حساب ${name} مشبوه (بدون يوزرنيم أو معلومات ناقصة)\n🔒 تم تقييده مؤقتاً لمدة ساعة`, parse_mode: 'Markdown' });
-      // Auto-restrict suspicious new accounts for 1 hour
+      await tg('sendMessage', { chat_id: chatId, text: `⚠️ *تنبيه:* حساب ${name} مشبوه (بيانات ناقصة/اسم غير طبيعي)\n🔒 تم كتمه تلقائياً لمدة ساعتين`, parse_mode: 'Markdown' });
       await tg('restrictChatMember', {
         chat_id: chatId, user_id: member.id,
-        until_date: Math.floor(Date.now() / 1000) + 3600,
-        permissions: { can_send_messages: true, can_send_media_messages: false, can_send_other_messages: false, can_add_web_page_previews: false },
+        until_date: Math.floor(Date.now() / 1000) + 7200,
+        permissions: { can_send_messages: false, can_send_media_messages: false, can_send_other_messages: false, can_add_web_page_previews: false },
       });
       await logAdminAction(supabase, chatId, 0, 'نظام الحماية', member.id, name, 'auto_restrict', 'حساب مشبوه');
     }
@@ -1877,6 +1989,14 @@ async function handleNewMembers(supabase: any, msg: any) {
     await tg('sendMessage', { chat_id: chatId, text: welcome });
     await upsertMember(supabase, member.id, chatId, member.username || '', name);
   }
+
+  const recentDbThreshold = new Date(Date.now() - 60_000).toISOString();
+  const { count } = await supabase.from('members')
+    .select('user_id', { count: 'exact', head: true })
+    .eq('chat_id', chatId)
+    .gte('join_date', recentDbThreshold);
+  const joinsInLastMinute = Math.max(registerJoin(chatId), count || 0);
+  await maybeActivateAutoAntiRaid(supabase, chatId, joinsInLastMinute);
 }
 
 async function handleLeftMember(msg: any) {
