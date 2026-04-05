@@ -40,6 +40,7 @@ const DEVELOPER_ID = 6570434162;
 const lastReply: Record<number, number> = {};
 const COOLDOWN_MS = 8000;
 const floodTracker: Record<string, number[]> = {};
+const joinTracker: Record<number, number[]> = {};
 
 function canReply(chatId: number): boolean {
   const now = Date.now();
@@ -52,6 +53,23 @@ function isDeveloper(userId: number): boolean { return userId === DEVELOPER_ID; 
 
 // ============ FLOOD & SPAM DETECTION ============
 const contentTracker: Record<string, string[]> = {};
+
+function sanitizeFileName(fileName: string): string {
+  const parts = fileName.split('.');
+  const ext = parts.length > 1 ? parts.pop()!.toLowerCase() : '';
+  const base = parts.join('.') || 'file';
+  const safeBase = base.replace(/[^a-zA-Z0-9-_]+/g, '_').slice(0, 80) || 'file';
+  const safeExt = ext.replace(/[^a-zA-Z0-9]+/g, '').slice(0, 15);
+  return `${Date.now()}_${crypto.randomUUID()}_${safeBase}${safeExt ? `.${safeExt}` : ''}`;
+}
+
+function registerJoin(chatId: number): number {
+  const now = Date.now();
+  if (!joinTracker[chatId]) joinTracker[chatId] = [];
+  joinTracker[chatId] = joinTracker[chatId].filter((t) => now - t < 60000);
+  joinTracker[chatId].push(now);
+  return joinTracker[chatId].length;
+}
 
 function checkFlood(userId: number, chatId: number, messageText?: string): 'none' | 'flood' | 'repeat' {
   const key = `${userId}_${chatId}`;
@@ -84,7 +102,8 @@ function isSuspiciousAccount(user: any): boolean {
   const hasNoUsername = !user.username;
   const hasNoLastName = !user.last_name;
   const hasShortName = (user.first_name || '').length <= 1;
-  return hasNoUsername && hasNoLastName && hasShortName;
+  const numericName = /^\d+$/.test((user.first_name || '').trim());
+  return (hasNoUsername && hasNoLastName && hasShortName) || numericName;
 }
 
 // ============ AI ============
