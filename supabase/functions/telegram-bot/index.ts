@@ -387,7 +387,10 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 - browse_url: افتح صفحة وتصفح محتواها بعمق. استخدمها بعد web_search أو عند إعطاء رابط.
 - youtube_search: أفضل فيديوهات يوتيوب لموضوع.
 - book_pdf_search: كتب PDF من مصادر موثوقة.
-- download_video: تنزيل فيديو من يوتيوب/تيك توك/انستغرام/تويتر/فيسبوك.
+- download_video: تنزيل فيديو/صوت من يوتيوب/تيك توك/انستغرام/تويتر/فيسبوك/سبوتيفاي (كوكيز اليوتيوب وسبوتيفاي مفعّلة بإذن المالك).
+- spotify_lookup: بحث سبوتيفاي عن أغانٍ/ألبومات/فنانين.
+
+المتصفح التفاعلي: يمكنك استدعاء browse_url عدة مرات متتالية للتنقل بين الروابط (كل استدعاء يعيد لك قائمة روابط الصفحة). خطط، تصفّح، استخرج البيانات، ثم أجب.
 
 قواعد صارمة:
 1. عند البحث استعمل الأدوات مرة أو أكثر، ثم قدّم إجابة منظمة واذكر المصادر (روابط URL كاملة).
@@ -418,8 +421,8 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
 
     const tools = [...RESEARCH_TOOLS, ...(isAdminOrDev ? AI_TOOLS : [])];
 
-    // Agent loop: up to 4 tool-call iterations
-    for (let step = 0; step < 4; step++) {
+    // Agent loop: up to 8 tool-call iterations (interactive browsing)
+    for (let step = 0; step < 8; step++) {
       const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
