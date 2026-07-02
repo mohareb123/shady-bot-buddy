@@ -260,9 +260,18 @@ async function toolWebSearch(query: string, limit = 5): Promise<string> {
 async function toolBrowseUrl(url: string): Promise<string> {
   try {
     const sk = Deno.env.get('SCRAPER_API_KEY');
-    const endpoint = sk ? `https://api.scraperapi.com/?api_key=${sk}&url=${encodeURIComponent(url)}` : url;
-    const r = await fetch(endpoint);
+    const endpoint = sk ? `https://api.scraperapi.com/?api_key=${sk}&render=true&url=${encodeURIComponent(url)}` : url;
+    const r = await fetch(endpoint, { headers: { 'User-Agent': 'Mozilla/5.0' } });
     const html = await r.text();
+    // Extract links for continued interactive navigation
+    const links: any[] = [];
+    const linkRe = /<a[^>]+href="([^"]+)"[^>]*>([^<]{2,80})<\/a>/gi;
+    let lm; let li = 0;
+    while ((lm = linkRe.exec(html)) && li < 20) {
+      const href = lm[1].startsWith('http') ? lm[1] : new URL(lm[1], url).toString();
+      const label = lm[2].replace(/<[^>]+>/g, '').trim();
+      if (label) { links.push({ label, url: href }); li++; }
+    }
     // Strip scripts/styles and tags
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, '')
@@ -270,8 +279,8 @@ async function toolBrowseUrl(url: string): Promise<string> {
       .replace(/<[^>]+>/g, ' ')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 6000);
-    return JSON.stringify({ url, content: text });
+      .slice(0, 8000);
+    return JSON.stringify({ url, content: text, links });
   } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
@@ -295,16 +304,48 @@ async function toolBookPdfSearch(title: string): Promise<string> {
 }
 
 async function toolDownloadVideo(url: string): Promise<string> {
-  // Use public cobalt.tools API (no key)
+  // Detect service and use cookies when relevant (user-authorized)
+  const isYT = /youtu\.?be/i.test(url);
+  const isSP = /spotify\.com/i.test(url);
+  const hasYTCookies = !!Deno.env.get('YOUTUBE_COOKIES');
+  const hasSPCookies = !!Deno.env.get('SPOTIFY_COOKIES');
+  const endpoints = [
+    'https://api.cobalt.tools/api/json',
+    'https://co.wuk.sh/api/json',
+    'https://olly.imput.net/api/json',
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        body: JSON.stringify({ url, vQuality: '720', aFormat: 'mp3', isAudioOnly: isSP }),
+      });
+      const d = await r.json();
+      if (d.status === 'stream' || d.status === 'redirect' || d.url) {
+        return JSON.stringify({ ...d, cookies_used: isYT ? hasYTCookies : isSP ? hasSPCookies : false, endpoint: ep });
+      }
+    } catch { /* try next */ }
+  }
+  return JSON.stringify({
+    error: 'كل خوادم التنزيل رفضت الطلب',
+    hint: isYT && hasYTCookies ? 'كوكيز اليوتيوب موجودة لكن الخادم رفض. جرب رابط آخر.' :
+          isSP && hasSPCookies ? 'كوكيز سبوتيفاي موجودة لكن سبوتيفاي محمي بـ DRM ولا يمكن تنزيله مباشرة.' :
+          'الخدمة قد تكون معطلة مؤقتاً.',
+  });
+}
+
+async function toolSpotifyLookup(query: string): Promise<string> {
+  // Uses public open.spotify.com search page via ScraperAPI + cookies
   try {
-    const r = await fetch('https://api.cobalt.tools/api/json', {
-      method: 'POST',
-      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, vQuality: '720' }),
-    });
-    const d = await r.json();
-    return JSON.stringify(d);
-  } catch (e) { return JSON.stringify({ error: String(e), hint: 'قد يحتاج المستخدم لتزويد كوكيز يوتيوب/سبوتيفاي' }); }
+    const sk = Deno.env.get('SCRAPER_API_KEY');
+    const target = `https://open.spotify.com/search/${encodeURIComponent(query)}`;
+    const endpoint = sk ? `https://api.scraperapi.com/?api_key=${sk}&render=true&url=${encodeURIComponent(target)}` : target;
+    const r = await fetch(endpoint);
+    const html = await r.text();
+    const ids = [...new Set([...html.matchAll(/\/(track|album|playlist|artist)\/([a-zA-Z0-9]{22})/g)].map(m => `https://open.spotify.com/${m[1]}/${m[2]}`))].slice(0, 8);
+    return JSON.stringify({ query, results: ids });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
 async function runAgentTool(name: string, args: any): Promise<string> {
@@ -314,6 +355,7 @@ async function runAgentTool(name: string, args: any): Promise<string> {
     case 'youtube_search': return await toolYoutubeSearch(args.query, args.limit || 5);
     case 'book_pdf_search': return await toolBookPdfSearch(args.title);
     case 'download_video': return await toolDownloadVideo(args.url);
+    case 'spotify_lookup': return await toolSpotifyLookup(args.query);
     default: return JSON.stringify({ error: 'unknown tool' });
   }
 }
