@@ -216,6 +216,19 @@ const RESEARCH_TOOLS = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "spotify_lookup",
+      description: "ابحث في سبوتيفاي عن أغانٍ/ألبومات/فنانين وأعد روابط open.spotify.com.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string" } },
+        required: ["query"],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
