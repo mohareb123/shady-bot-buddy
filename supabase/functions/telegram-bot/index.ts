@@ -147,29 +147,205 @@ const AI_TOOLS = [
   }
 ];
 
+// Public research/browsing tools available to ALL users
+const RESEARCH_TOOLS = [
+  {
+    type: "function",
+    function: {
+      name: "web_search",
+      description: "ابحث في الإنترنت عن معلومات حديثة وموثوقة. استخدمها عند سؤال المستخدم عن أخبار، حقائق، أشخاص، منتجات، أو أي معلومة تحتاج تحديث أو تحقق. أعد استخدامها إذا احتجت مصادر إضافية.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "استعلام البحث بالعربية أو الإنجليزية" },
+          limit: { type: "number", description: "عدد النتائج 3-8", default: 5 }
+        },
+        required: ["query"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "browse_url",
+      description: "افتح صفحة ويب واقرأ محتواها الكامل. استخدمها بعد web_search لجلب تفاصيل رابط محدد أو عندما يعطيك المستخدم رابطاً.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string", description: "الرابط المطلوب تصفحه" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "youtube_search",
+      description: "ابحث عن أفضل فيديوهات يوتيوب لموضوع معين وأعد الروابط المباشرة.",
+      parameters: {
+        type: "object",
+        properties: { query: { type: "string" }, limit: { type: "number", default: 5 } },
+        required: ["query"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "book_pdf_search",
+      description: "ابحث عن كتاب بصيغة PDF من مصادر موثوقة (Noor-Book, Archive.org, PDFDrive).",
+      parameters: {
+        type: "object",
+        properties: { title: { type: "string", description: "عنوان أو موضوع الكتاب" } },
+        required: ["title"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "download_video",
+      description: "أعطِ المستخدم رابط تنزيل مباشر لفيديو من يوتيوب، تيك توك، انستغرام، تويتر، فيسبوك.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
+  }
+];
+
+// ============ AGENT TOOL EXECUTORS ============
+async function toolWebSearch(query: string, limit = 5): Promise<string> {
+  try {
+    const key = Deno.env.get('LOVABLE_API_KEY');
+    // Try Firecrawl through connector if available
+    const fc = Deno.env.get('FIRECRAWL_API_KEY');
+    if (fc) {
+      const r = await fetch('https://api.firecrawl.dev/v2/search', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${fc}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, limit }),
+      });
+      if (r.ok) {
+        const d = await r.json();
+        const list = (d.data || d.web?.results || []).slice(0, limit);
+        return JSON.stringify(list.map((x: any) => ({ title: x.title, url: x.url, snippet: x.description || x.snippet })));
+      }
+    }
+    // Fallback: DuckDuckGo HTML via ScraperAPI
+    const sk = Deno.env.get('SCRAPER_API_KEY');
+    if (sk) {
+      const target = `https://duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+      const r = await fetch(`https://api.scraperapi.com/?api_key=${sk}&url=${encodeURIComponent(target)}`);
+      const html = await r.text();
+      const results: any[] = [];
+      const re = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([^<]+)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
+      let m; let i = 0;
+      while ((m = re.exec(html)) && i < limit) {
+        const url = decodeURIComponent((m[1].match(/uddg=([^&]+)/) || [null, m[1]])[1]);
+        results.push({ title: m[2].replace(/<[^>]+>/g, '').trim(), url, snippet: m[3].replace(/<[^>]+>/g, '').trim() });
+        i++;
+      }
+      return JSON.stringify(results);
+    }
+    return JSON.stringify({ error: 'no search backend' });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolBrowseUrl(url: string): Promise<string> {
+  try {
+    const sk = Deno.env.get('SCRAPER_API_KEY');
+    const endpoint = sk ? `https://api.scraperapi.com/?api_key=${sk}&url=${encodeURIComponent(url)}` : url;
+    const r = await fetch(endpoint);
+    const html = await r.text();
+    // Strip scripts/styles and tags
+    const text = html
+      .replace(/<script[\s\S]*?<\/script>/gi, '')
+      .replace(/<style[\s\S]*?<\/style>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 6000);
+    return JSON.stringify({ url, content: text });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolYoutubeSearch(query: string, limit = 5): Promise<string> {
+  try {
+    const sk = Deno.env.get('SCRAPER_API_KEY');
+    const target = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`;
+    const endpoint = sk ? `https://api.scraperapi.com/?api_key=${sk}&url=${encodeURIComponent(target)}` : target;
+    const r = await fetch(endpoint);
+    const html = await r.text();
+    const ids = [...new Set([...html.matchAll(/"videoId":"([\w-]{11})"/g)].map(m => m[1]))].slice(0, limit);
+    const titles = [...html.matchAll(/"title":\{"runs":\[\{"text":"([^"]+)"\}/g)].map(m => m[1]).slice(0, limit);
+    const out = ids.map((id, i) => ({ title: titles[i] || 'YouTube video', url: `https://www.youtube.com/watch?v=${id}` }));
+    return JSON.stringify(out);
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolBookPdfSearch(title: string): Promise<string> {
+  const q = `${title} filetype:pdf (site:archive.org OR site:noor-book.com OR site:pdfdrive.com)`;
+  return await toolWebSearch(q, 6);
+}
+
+async function toolDownloadVideo(url: string): Promise<string> {
+  // Use public cobalt.tools API (no key)
+  try {
+    const r = await fetch('https://api.cobalt.tools/api/json', {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, vQuality: '720' }),
+    });
+    const d = await r.json();
+    return JSON.stringify(d);
+  } catch (e) { return JSON.stringify({ error: String(e), hint: 'قد يحتاج المستخدم لتزويد كوكيز يوتيوب/سبوتيفاي' }); }
+}
+
+async function runAgentTool(name: string, args: any): Promise<string> {
+  switch (name) {
+    case 'web_search': return await toolWebSearch(args.query, args.limit || 5);
+    case 'browse_url': return await toolBrowseUrl(args.url);
+    case 'youtube_search': return await toolYoutubeSearch(args.query, args.limit || 5);
+    case 'book_pdf_search': return await toolBookPdfSearch(args.title);
+    case 'download_video': return await toolDownloadVideo(args.url);
+    default: return JSON.stringify({ error: 'unknown tool' });
+  }
+}
+
 async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = []): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
 
-    const systemPrompt = `أنت بوت تليغرام اسمك "شادي". شخصيتك مرحة وظريفة وتحب المزاح لكنك ذكي جداً.
-ترد بالعربية دائماً وبأسلوب شبابي. ردودك قصيرة (جملة أو جملتين كحد أقصى) إلا إذا طُلب منك شرح أو بحث.
+    const systemPrompt = `أنت "شادي" — وكيل ذكاء اصطناعي متقدم داخل تليغرام. ذكي، منطقي، دقيق، وتحب المزاح الخفيف.
+ترد بالعربية الفصحى (مع لهجة شبابية عند الدردشة). ردودك قصيرة إلا في المهام البحثية فتكون منظمة.
 إذا حياك أحد رد بتحية لطيفة. إذا شكرك رد بتواضع. إذا سألك من أنت عرّف عن نفسك.
-إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.
-إذا سألك سؤال ثقافي أو علمي أجب عليه بدقة ووضوح.
-إذا طلب ترجمة نص ترجمه بدقة.
-إذا طلب بحث عن موضوع أو شخص، قدم معلومات مفصلة ودقيقة مع المصادر.
-إذا طلب ملخص كتاب أو معلومات عنه، قدمها بشكل منظم مع روابط PDF إن أمكن.
-إذا طلب بحث يوتيوب، اقترح أفضل الفيديوهات مع روابط بحث.
-إذا طلب بحث ويب، ابحث وقدم النتائج مع المواقع والمصادر.
+
+قدراتك (استخدم الأدوات فعلياً — لا تخمّن):
+- web_search: ابحث في الإنترنت. استخدمها لأي معلومة تحتاج تحقّق أو حداثة.
+- browse_url: افتح صفحة وتصفح محتواها بعمق. استخدمها بعد web_search أو عند إعطاء رابط.
+- youtube_search: أفضل فيديوهات يوتيوب لموضوع.
+- book_pdf_search: كتب PDF من مصادر موثوقة.
+- download_video: تنزيل فيديو من يوتيوب/تيك توك/انستغرام/تويتر/فيسبوك.
+
+قواعد صارمة:
+1. عند البحث استعمل الأدوات مرة أو أكثر، ثم قدّم إجابة منظمة واذكر المصادر (روابط URL كاملة).
+2. لا تخترع معلومات. إذا لم تجد، قل ذلك بصراحة.
+3. للمهام المعقدة: خطّط، نفّذ الأدوات خطوة بخطوة، ثم لخّص.
+4. إذا كانت التعليمات غامضة اسأل سؤالاً توضيحياً واحداً.
 لديك ذاكرة للمحادثات السابقة مع المستخدم. استخدمها لتكون أكثر طبيعية.
-حلل سياق المحادثة لفهم نوايا المستخدم حتى لو لم يذكر اسمك مباشرة.
 
 أنت قادر على تنفيذ جميع الأوامر الإدارية وأوامر البوت بدون الحاجة لكتابة أمر. مثلاً:
 - "يا شادي اكتب نكتة" → أكتب نكتة مضحكة
 - "يا شادي شو حظي اليوم" → أعطي حظ اليوم
 - "يا شادي ترجم" → ترجم الرسالة المردود عليها
-- "يا شادي ابحث عن X" → ابحث عن الموضوع وقدم نتائج مع مصادر
+- "يا شادي ابحث عن X" → استعمل web_search ثم قدّم النتائج مع الروابط
 - "يا شادي حكمة" → أعطي حكمة
 - "يا شادي كم عملاتي" → أجب عن رصيد المحفظة
 ${isAdminOrDev ? `
@@ -185,36 +361,55 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
     }
     messages.push({ role: 'user', content: text });
 
-    const body: any = {
-      model: 'google/gemini-3-flash-preview',
-      messages,
-    };
+    const tools = [...RESEARCH_TOOLS, ...(isAdminOrDev ? AI_TOOLS : [])];
 
-    if (isAdminOrDev) {
-      body.tools = AI_TOOLS;
-      body.tool_choice = "auto";
-    }
+    // Agent loop: up to 4 tool-call iterations
+    for (let step = 0; step < 4; step++) {
+      const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'google/gemini-3-flash-preview',
+          messages,
+          tools,
+          tool_choice: 'auto',
+        }),
+      });
+      if (!res.ok) return { text: null, action: null };
+      const data = await res.json();
+      const choice = data.choices?.[0];
+      const msg = choice?.message;
+      if (!msg) return { text: null, action: null };
 
-    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return { text: null, action: null };
-    const data = await res.json();
-    const choice = data.choices?.[0];
+      const toolCalls = msg.tool_calls || [];
+      if (toolCalls.length === 0) {
+        return { text: msg.content || null, action: null };
+      }
 
-    if (choice?.message?.tool_calls?.length > 0) {
-      const toolCall = choice.message.tool_calls[0];
-      if (toolCall.function?.name === 'execute_action') {
+      // Handle execute_action immediately (short-circuit)
+      const exec = toolCalls.find((tc: any) => tc.function?.name === 'execute_action');
+      if (exec) {
         try {
-          const action = JSON.parse(toolCall.function.arguments);
+          const action = JSON.parse(exec.function.arguments);
           return { text: action.reply_text || null, action };
-        } catch { return { text: choice?.message?.content || null, action: null }; }
+        } catch { return { text: msg.content || null, action: null }; }
+      }
+
+      // Otherwise run research tools and feed results back
+      messages.push(msg);
+      for (const tc of toolCalls) {
+        const name = tc.function?.name;
+        let args: any = {};
+        try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+        const result = await runAgentTool(name, args);
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: result.slice(0, 8000),
+        });
       }
     }
-
-    return { text: choice?.message?.content || null, action: null };
+    return { text: 'انتهت خطوات البحث دون إجابة نهائية. جرّب صياغة أخرى.', action: null };
   } catch { return { text: null, action: null }; }
 }
 
