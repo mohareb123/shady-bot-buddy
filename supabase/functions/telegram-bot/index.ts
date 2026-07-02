@@ -323,24 +323,29 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
 
-    const systemPrompt = `أنت بوت تليغرام اسمك "شادي". شخصيتك مرحة وظريفة وتحب المزاح لكنك ذكي جداً.
-ترد بالعربية دائماً وبأسلوب شبابي. ردودك قصيرة (جملة أو جملتين كحد أقصى) إلا إذا طُلب منك شرح أو بحث.
+    const systemPrompt = `أنت "شادي" — وكيل ذكاء اصطناعي متقدم داخل تليغرام. ذكي، منطقي، دقيق، وتحب المزاح الخفيف.
+ترد بالعربية الفصحى (مع لهجة شبابية عند الدردشة). ردودك قصيرة إلا في المهام البحثية فتكون منظمة.
 إذا حياك أحد رد بتحية لطيفة. إذا شكرك رد بتواضع. إذا سألك من أنت عرّف عن نفسك.
-إذا قال كلام حب أو زعل تفاعل عاطفياً. كن ذكياً وسريع البديهة.
-إذا سألك سؤال ثقافي أو علمي أجب عليه بدقة ووضوح.
-إذا طلب ترجمة نص ترجمه بدقة.
-إذا طلب بحث عن موضوع أو شخص، قدم معلومات مفصلة ودقيقة مع المصادر.
-إذا طلب ملخص كتاب أو معلومات عنه، قدمها بشكل منظم مع روابط PDF إن أمكن.
-إذا طلب بحث يوتيوب، اقترح أفضل الفيديوهات مع روابط بحث.
-إذا طلب بحث ويب، ابحث وقدم النتائج مع المواقع والمصادر.
+
+قدراتك (استخدم الأدوات فعلياً — لا تخمّن):
+- web_search: ابحث في الإنترنت. استخدمها لأي معلومة تحتاج تحقّق أو حداثة.
+- browse_url: افتح صفحة وتصفح محتواها بعمق. استخدمها بعد web_search أو عند إعطاء رابط.
+- youtube_search: أفضل فيديوهات يوتيوب لموضوع.
+- book_pdf_search: كتب PDF من مصادر موثوقة.
+- download_video: تنزيل فيديو من يوتيوب/تيك توك/انستغرام/تويتر/فيسبوك.
+
+قواعد صارمة:
+1. عند البحث استعمل الأدوات مرة أو أكثر، ثم قدّم إجابة منظمة واذكر المصادر (روابط URL كاملة).
+2. لا تخترع معلومات. إذا لم تجد، قل ذلك بصراحة.
+3. للمهام المعقدة: خطّط، نفّذ الأدوات خطوة بخطوة، ثم لخّص.
+4. إذا كانت التعليمات غامضة اسأل سؤالاً توضيحياً واحداً.
 لديك ذاكرة للمحادثات السابقة مع المستخدم. استخدمها لتكون أكثر طبيعية.
-حلل سياق المحادثة لفهم نوايا المستخدم حتى لو لم يذكر اسمك مباشرة.
 
 أنت قادر على تنفيذ جميع الأوامر الإدارية وأوامر البوت بدون الحاجة لكتابة أمر. مثلاً:
 - "يا شادي اكتب نكتة" → أكتب نكتة مضحكة
 - "يا شادي شو حظي اليوم" → أعطي حظ اليوم
 - "يا شادي ترجم" → ترجم الرسالة المردود عليها
-- "يا شادي ابحث عن X" → ابحث عن الموضوع وقدم نتائج مع مصادر
+- "يا شادي ابحث عن X" → استعمل web_search ثم قدّم النتائج مع الروابط
 - "يا شادي حكمة" → أعطي حكمة
 - "يا شادي كم عملاتي" → أجب عن رصيد المحفظة
 ${isAdminOrDev ? `
@@ -356,36 +361,55 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
     }
     messages.push({ role: 'user', content: text });
 
-    const body: any = {
-      model: 'google/gemini-3-flash-preview',
-      messages,
-    };
+    const tools = [...RESEARCH_TOOLS, ...(isAdminOrDev ? AI_TOOLS : [])];
 
-    if (isAdminOrDev) {
-      body.tools = AI_TOOLS;
-      body.tool_choice = "auto";
-    }
+    // Agent loop: up to 4 tool-call iterations
+    for (let step = 0; step < 4; step++) {
+      const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'google/gemini-3-flash-preview',
+          messages,
+          tools,
+          tool_choice: 'auto',
+        }),
+      });
+      if (!res.ok) return { text: null, action: null };
+      const data = await res.json();
+      const choice = data.choices?.[0];
+      const msg = choice?.message;
+      if (!msg) return { text: null, action: null };
 
-    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) return { text: null, action: null };
-    const data = await res.json();
-    const choice = data.choices?.[0];
+      const toolCalls = msg.tool_calls || [];
+      if (toolCalls.length === 0) {
+        return { text: msg.content || null, action: null };
+      }
 
-    if (choice?.message?.tool_calls?.length > 0) {
-      const toolCall = choice.message.tool_calls[0];
-      if (toolCall.function?.name === 'execute_action') {
+      // Handle execute_action immediately (short-circuit)
+      const exec = toolCalls.find((tc: any) => tc.function?.name === 'execute_action');
+      if (exec) {
         try {
-          const action = JSON.parse(toolCall.function.arguments);
+          const action = JSON.parse(exec.function.arguments);
           return { text: action.reply_text || null, action };
-        } catch { return { text: choice?.message?.content || null, action: null }; }
+        } catch { return { text: msg.content || null, action: null }; }
+      }
+
+      // Otherwise run research tools and feed results back
+      messages.push(msg);
+      for (const tc of toolCalls) {
+        const name = tc.function?.name;
+        let args: any = {};
+        try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
+        const result = await runAgentTool(name, args);
+        messages.push({
+          role: 'tool',
+          tool_call_id: tc.id,
+          content: result.slice(0, 8000),
+        });
       }
     }
-
-    return { text: choice?.message?.content || null, action: null };
+    return { text: 'انتهت خطوات البحث دون إجابة نهائية. جرّب صياغة أخرى.', action: null };
   } catch { return { text: null, action: null }; }
 }
 
