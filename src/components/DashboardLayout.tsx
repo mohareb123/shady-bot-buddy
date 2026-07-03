@@ -2,7 +2,7 @@ import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { 
   LayoutDashboard, Users, MessageSquare, Shield, 
-  HelpCircle, Bot, Settings, Bell, LogOut, Menu, X
+  HelpCircle, Bot, Settings, Bell, LogOut, Menu, X, Globe
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
@@ -17,6 +17,7 @@ const navItems = [
   { path: "/responses", label: "الردود التلقائية", icon: MessageSquare },
   { path: "/questions", label: "الأسئلة", icon: HelpCircle },
   { path: "/notifications", label: "الإشعارات", icon: Bell },
+  { path: "/browser", label: "المتصفح التفاعلي", icon: Globe },
 ];
 
 function NavContent({ onNavigate }: { onNavigate?: () => void }) {
