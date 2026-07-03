@@ -181,6 +181,125 @@ export type Database = {
         }
         Relationships: []
       }
+      browser_actions: {
+        Row: {
+          action_type: string
+          created_at: string
+          id: string
+          input: Json | null
+          output: Json | null
+          screenshot_url: string | null
+          session_id: string | null
+          status: string | null
+        }
+        Insert: {
+          action_type: string
+          created_at?: string
+          id?: string
+          input?: Json | null
+          output?: Json | null
+          screenshot_url?: string | null
+          session_id?: string | null
+          status?: string | null
+        }
+        Update: {
+          action_type?: string
+          created_at?: string
+          id?: string
+          input?: Json | null
+          output?: Json | null
+          screenshot_url?: string | null
+          session_id?: string | null
+          status?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "browser_actions_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "browser_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      browser_contexts: {
+        Row: {
+          bb_context_id: string
+          created_at: string
+          description: string | null
+          id: string
+          last_used_at: string | null
+          logged_in: boolean | null
+          metadata: Json | null
+          site_name: string
+        }
+        Insert: {
+          bb_context_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_used_at?: string | null
+          logged_in?: boolean | null
+          metadata?: Json | null
+          site_name: string
+        }
+        Update: {
+          bb_context_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          last_used_at?: string | null
+          logged_in?: boolean | null
+          metadata?: Json | null
+          site_name?: string
+        }
+        Relationships: []
+      }
+      browser_sessions: {
+        Row: {
+          bb_session_id: string
+          connect_url: string | null
+          context_id: string | null
+          created_at: string
+          ended_at: string | null
+          id: string
+          last_screenshot: string | null
+          live_view_url: string | null
+          metadata: Json | null
+          site_name: string | null
+          started_by: number | null
+          status: string
+        }
+        Insert: {
+          bb_session_id: string
+          connect_url?: string | null
+          context_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          last_screenshot?: string | null
+          live_view_url?: string | null
+          metadata?: Json | null
+          site_name?: string | null
+          started_by?: number | null
+          status?: string
+        }
+        Update: {
+          bb_session_id?: string
+          connect_url?: string | null
+          context_id?: string | null
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          last_screenshot?: string | null
+          live_view_url?: string | null
+          metadata?: Json | null
+          site_name?: string | null
+          started_by?: number | null
+          status?: string
+        }
+        Relationships: []
+      }
       conversation_memory: {
         Row: {
           chat_id: number

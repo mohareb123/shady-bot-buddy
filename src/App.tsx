@@ -13,6 +13,7 @@ import LogsPage from "./pages/LogsPage.tsx";
 import ResponsesPage from "./pages/ResponsesPage.tsx";
 import QuestionsPage from "./pages/QuestionsPage.tsx";
 import NotificationsPage from "./pages/NotificationsPage.tsx";
+import BrowserPage from "./pages/BrowserPage.tsx";
 import NotFound from "./pages/NotFound.tsx";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const AppRoutes = () => (
     <Route path="/responses" element={<ProtectedRoute><ResponsesPage /></ProtectedRoute>} />
     <Route path="/questions" element={<ProtectedRoute><QuestionsPage /></ProtectedRoute>} />
     <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+    <Route path="/browser" element={<ProtectedRoute><BrowserPage /></ProtectedRoute>} />
     <Route path="*" element={<NotFound />} />
   </Routes>
 );
