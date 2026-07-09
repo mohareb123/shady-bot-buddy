@@ -961,7 +961,8 @@ Deno.serve(async (req) => {
         const history = await loadConversationHistory(supabase, chatId, userId);
         const hasReplyTarget = !!msg.reply_to_message;
         const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history);
+        const pref = await getUserAIPref(supabase, userId);
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref);
         
         // Save conversation to memory
         await saveConversationMessage(supabase, chatId, userId, 'user', text);
