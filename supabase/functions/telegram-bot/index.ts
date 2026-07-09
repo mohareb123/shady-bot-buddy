@@ -1659,6 +1659,28 @@ async function cmdWhoami(chatId: number, userId: number, username: string, fullN
   await tg('sendMessage', { chat_id: chatId, text: lines.join('\n'), parse_mode: 'HTML' });
 }
 
+async function cmdModel(supabase: any, chatId: number, userId: number) {
+  const pref = await getUserAIPref(supabase, userId);
+  const current = AI_MODELS.find(m => m.id === pref.model);
+  const keyboard = AI_MODELS.map(m => [{
+    text: `${m.id === pref.model ? '✅ ' : ''}${m.name}${m.fast ? ' ⚡' : ''}`,
+    callback_data: `model_${m.id}`,
+  }]);
+  keyboard.push([{ text: pref.fast_mode ? '⚡ الوضع السريع: مُفعّل' : '🐢 الوضع السريع: مُعطّل', callback_data: 'fast_toggle' }]);
+  const text = `🧠 <b>اختر عقل شادي (LLM)</b>\n\n<b>الحالي:</b> ${current?.name || pref.model}\n<code>${pref.model}</code>\n\n⚡ = يدعم الوضع السريع (Priority tier).\nاستعمل الأزرار للتبديل بين النماذج.`;
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+}
+
+async function cmdFast(supabase: any, chatId: number, userId: number) {
+  const pref = await getUserAIPref(supabase, userId);
+  const meta = AI_MODELS.find(m => m.id === pref.model);
+  if (!meta?.fast) {
+    return tg('sendMessage', { chat_id: chatId, text: `⚠️ الموديل الحالي (${meta?.name || pref.model}) لا يدعم الوضع السريع. اختر موديل عليه ⚡ من /model.` });
+  }
+  await setUserAIPref(supabase, userId, { fast_mode: !pref.fast_mode });
+  await tg('sendMessage', { chat_id: chatId, text: !pref.fast_mode ? '⚡ تم تفعيل الوضع السريع (Priority tier) — ردود أسرع، تكلفة أعلى.' : '🐢 تم إيقاف الوضع السريع.' });
+}
+
 async function cmdAddCoins(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
   if (!isDeveloper(userId)) return tg('sendMessage', { chat_id: chatId, text: '❌ هذا الأمر للمطور فقط' });
   const target = await getTarget(msg);
