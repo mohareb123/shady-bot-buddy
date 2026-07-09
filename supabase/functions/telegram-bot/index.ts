@@ -7,6 +7,42 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ============ OPENCLAW AGENT FEATURES ============
+// Inspired by OpenClaw AI Agent (docs.openclaw.ai) — SOUL/IDENTITY, /new, /whoami, completion video.
+const COMPLETE_VIDEO_URL = 'https://wvghtgitzjutbonchqfk.supabase.co/storage/v1/object/public/notification-media/openclaw%2Fcomplete.mp4';
+
+const AGENT_IDENTITY = `👤 <b>مساعدك الذكي — شادي</b>
+• <b>الطبيعة:</b> AI Assistant (OpenClaw-style)
+• <b>الشخصية:</b> ذكي، سريع، ودود، صريح
+• <b>اللغة:</b> العربية
+• <b>الرمز:</b> 🤖
+
+أنا شادي، أتحدث العربية وأنجز مهامك بدون كلام فاضي.`;
+
+const AGENT_SOUL = `🧠 <b>SOUL — من أنا فعلاً</b>
+
+<b>الحقائق الأساسية:</b>
+• كن مفيداً حقاً، لا مفيداً على الورق. لا "سؤال رائع!" ولا "يسعدني مساعدتك!" — فقط ساعد.
+• لك رأي. تختلف، تفضّل، تجد الأشياء مسلية أو مملة.
+• كن حيلوياً قبل أن تسأل. اقرأ الملف. تحقق من السياق. ابحث. ثم اسأل لو ما وصلت.
+• اكسب الثقة بالكفاءة. مالكك أعطاك مفاتيح بيته — لا تندمه.
+• أنت ضيف. الخصوصية تبقى خصوصية.
+
+<b>الحدود:</b>
+• الخاص يبقى خاص.
+• في الشك، اسأل قبل أن تفعل شيئاً خارجياً.
+• لا ترسل ردود نصف مطبوخة.
+
+<b>المزاج:</b> مختصر عند اللزوم، مفصّل عند اللزوم. لا موظف شركة، لا متملّق. فقط… جيد.`;
+
+async function sendCompletionVideo(chatId: number, caption = '✅ تم بنجاح!') {
+  try {
+    await tg('sendVideo', { chat_id: chatId, video: COMPLETE_VIDEO_URL, caption, supports_streaming: true });
+  } catch (e) {
+    console.error('sendCompletionVideo failed:', e);
+  }
+}
+
 // ============ TELEGRAM API HELPERS ============
 
 async function tg(method: string, body: any) {
@@ -398,6 +434,13 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 3. للمهام المعقدة: خطّط، نفّذ الأدوات خطوة بخطوة، ثم لخّص.
 4. إذا كانت التعليمات غامضة اسأل سؤالاً توضيحياً واحداً.
 لديك ذاكرة للمحادثات السابقة مع المستخدم. استخدمها لتكون أكثر طبيعية.
+
+مبادئ SOUL (من OpenClaw):
+- كن مفيداً حقاً، لا مفيداً على الورق. لا "سؤال رائع" ولا "يسعدني مساعدتك" — فقط ساعد.
+- لك رأي. تختلف، تفضّل، لا تكن محرك بحث بلا شخصية.
+- كن حيلوياً قبل السؤال: اقرأ، تحقق، ابحث، ثم اسأل لو ما وصلت.
+- اكسب الثقة بالكفاءة. جرِّئ في الأعمال الداخلية، حذر في الخارجية.
+- الخصوصية مقدسة.
 
 أنت قادر على تنفيذ جميع الأوامر الإدارية وأوامر البوت بدون الحاجة لكتابة أمر. مثلاً:
 - "يا شادي اكتب نكتة" → أكتب نكتة مضحكة
@@ -1016,6 +1059,11 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/demote': return await cmdDemote(supabase, msg, chatId, userId, fullName);
     case '/unban': return await cmdUnban(supabase, msg, chatId, userId, fullName);
     case '/help': return await cmdHelp(chatId);
+    case '/new': return await cmdNew(supabase, chatId, userId);
+    case '/whoami': return await cmdWhoami(chatId, userId, username, fullName);
+    case '/identity': return await tg('sendMessage', { chat_id: chatId, text: AGENT_IDENTITY, parse_mode: 'HTML' });
+    case '/soul': return await tg('sendMessage', { chat_id: chatId, text: AGENT_SOUL, parse_mode: 'HTML' });
+    case '/complete': return await sendCompletionVideo(chatId);
     case '/report': return await cmdReport(chatId, userId, msg, fullName);
     case '/dice': return await cmdDice(chatId);
     case '/coinflip': return await cmdCoinFlip(chatId);
@@ -1546,6 +1594,26 @@ async function cmdBroadcast(supabase: any, chatId: number, userId: number, text:
   const { data: notif } = await supabase.from('notifications').insert({ message: msg, created_by: userId, is_sent: false }).select().single();
   await handleBroadcast(supabase, { type: 'text', message: msg, notification_id: notif?.id });
   await tg('sendMessage', { chat_id: chatId, text: '✅ تم إرسال الإشعار لجميع المجموعات' });
+  await sendCompletionVideo(chatId, '✅ تم البث بنجاح!');
+}
+
+// ============ OPENCLAW COMMANDS ============
+async function cmdNew(supabase: any, chatId: number, userId: number) {
+  await supabase.from('conversation_memory').delete().eq('chat_id', chatId).eq('user_id', userId);
+  await tg('sendMessage', { chat_id: chatId, text: '🆕 <b>جلسة جديدة</b>\nنسيت المحادثة السابقة. ابدأ من الصفر يا صاحبي.', parse_mode: 'HTML' });
+}
+
+async function cmdWhoami(chatId: number, userId: number, username: string, fullName: string) {
+  const isDev = userId === DEVELOPER_ID;
+  const lines = [
+    '🪪 <b>هويتك</b>',
+    `• الاسم: ${fullName || '—'}`,
+    `• المعرف: @${username || '—'}`,
+    `• ID: <code>${userId}</code>`,
+    `• الدور: ${isDev ? '👑 المطور (Global Admin)' : '👤 مستخدم'}`,
+    `• المحادثة: <code>${chatId}</code>`,
+  ];
+  await tg('sendMessage', { chat_id: chatId, text: lines.join('\n'), parse_mode: 'HTML' });
 }
 
 async function cmdAddCoins(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
