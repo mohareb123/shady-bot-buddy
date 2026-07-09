@@ -1105,6 +1105,8 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/identity': return await tg('sendMessage', { chat_id: chatId, text: AGENT_IDENTITY, parse_mode: 'HTML' });
     case '/soul': return await tg('sendMessage', { chat_id: chatId, text: AGENT_SOUL, parse_mode: 'HTML' });
     case '/complete': return await sendCompletionVideo(chatId);
+    case '/model': case '/models': return await cmdModel(supabase, chatId, userId);
+    case '/fast': return await cmdFast(supabase, chatId, userId);
     case '/report': return await cmdReport(chatId, userId, msg, fullName);
     case '/dice': return await cmdDice(chatId);
     case '/coinflip': return await cmdCoinFlip(chatId);
