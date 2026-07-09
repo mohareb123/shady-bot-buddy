@@ -1059,6 +1059,11 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/demote': return await cmdDemote(supabase, msg, chatId, userId, fullName);
     case '/unban': return await cmdUnban(supabase, msg, chatId, userId, fullName);
     case '/help': return await cmdHelp(chatId);
+    case '/new': return await cmdNew(supabase, chatId, userId);
+    case '/whoami': return await cmdWhoami(chatId, userId, username, fullName);
+    case '/identity': return await tg('sendMessage', { chat_id: chatId, text: AGENT_IDENTITY, parse_mode: 'HTML' });
+    case '/soul': return await tg('sendMessage', { chat_id: chatId, text: AGENT_SOUL, parse_mode: 'HTML' });
+    case '/complete': return await sendCompletionVideo(chatId);
     case '/report': return await cmdReport(chatId, userId, msg, fullName);
     case '/dice': return await cmdDice(chatId);
     case '/coinflip': return await cmdCoinFlip(chatId);
