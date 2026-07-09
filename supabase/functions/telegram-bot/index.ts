@@ -43,6 +43,35 @@ async function sendCompletionVideo(chatId: number, caption = '✅ تم بنجا�
   }
 }
 
+// ============ OPENCLAW MODEL CATALOG (multi-LLM) ============
+// Each user picks a model via /model. Fast tier is enabled only when the model supports it.
+const AI_MODELS: { id: string; name: string; fast: boolean; tier: string }[] = [
+  { id: 'google/gemini-3-flash-preview', name: 'Gemini 3 Flash (افتراضي)', fast: false, tier: 'balanced' },
+  { id: 'google/gemini-3.5-flash',        name: 'Gemini 3.5 Flash',          fast: false, tier: 'balanced' },
+  { id: 'google/gemini-3.1-pro-preview',  name: 'Gemini 3.1 Pro (تفكير)',    fast: false, tier: 'pro' },
+  { id: 'google/gemini-2.5-pro',          name: 'Gemini 2.5 Pro',            fast: false, tier: 'pro' },
+  { id: 'google/gemini-2.5-flash-lite',   name: 'Gemini 2.5 Flash Lite (سريع/رخيص)', fast: false, tier: 'lite' },
+  { id: 'openai/gpt-5',                   name: 'GPT-5',                     fast: true,  tier: 'pro' },
+  { id: 'openai/gpt-5-mini',              name: 'GPT-5 Mini',                fast: true,  tier: 'balanced' },
+  { id: 'openai/gpt-5-nano',              name: 'GPT-5 Nano',                fast: false, tier: 'lite' },
+  { id: 'openai/gpt-5.4',                 name: 'GPT-5.4 (تفكير عميق)',      fast: true,  tier: 'pro' },
+  { id: 'openai/gpt-5.5',                 name: 'GPT-5.5 (أقوى)',            fast: true,  tier: 'pro' },
+];
+const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
+
+async function getUserAIPref(supabase: any, userId: number): Promise<{ model: string; fast_mode: boolean }> {
+  const { data } = await supabase.from('user_ai_prefs').select('model, fast_mode').eq('user_id', userId).maybeSingle();
+  if (!data) return { model: DEFAULT_MODEL, fast_mode: false };
+  const known = AI_MODELS.find(m => m.id === data.model);
+  return { model: known ? data.model : DEFAULT_MODEL, fast_mode: !!data.fast_mode && !!known?.fast };
+}
+
+async function setUserAIPref(supabase: any, userId: number, patch: { model?: string; fast_mode?: boolean }) {
+  const current = await getUserAIPref(supabase, userId);
+  const next = { user_id: userId, model: patch.model ?? current.model, fast_mode: patch.fast_mode ?? current.fast_mode, updated_at: new Date().toISOString() };
+  await supabase.from('user_ai_prefs').upsert(next, { onConflict: 'user_id' });
+}
+
 // ============ TELEGRAM API HELPERS ============
 
 async function tg(method: string, body: any) {
@@ -409,7 +438,7 @@ async function runAgentTool(name: string, args: any): Promise<string> {
   }
 }
 
-async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = []): Promise<{ text: string | null; action: any | null }> {
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
@@ -464,19 +493,30 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
 
     const tools = [...RESEARCH_TOOLS, ...(isAdminOrDev ? AI_TOOLS : [])];
 
-    // Agent loop: up to 8 tool-call iterations (interactive browsing)
-    for (let step = 0; step < 8; step++) {
+    const selectedModel = pref?.model || DEFAULT_MODEL;
+    const modelMeta = AI_MODELS.find(m => m.id === selectedModel);
+    const useFast = !!pref?.fast_mode && !!modelMeta?.fast;
+    const fallbackModel = DEFAULT_MODEL;
+
+    // Agent loop: up to 20 tool-call iterations (deep agentic browsing, OpenClaw-style)
+    let currentModel = selectedModel;
+    for (let step = 0; step < 20; step++) {
+      const reqBody: any = { model: currentModel, messages, tools, tool_choice: 'auto' };
+      if (useFast && currentModel === selectedModel) reqBody.service_tier = 'priority';
       const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'google/gemini-3-flash-preview',
-          messages,
-          tools,
-          tool_choice: 'auto',
-        }),
+        body: JSON.stringify(reqBody),
       });
-      if (!res.ok) return { text: null, action: null };
+      if (!res.ok) {
+        // Auto-fallback to default model once if the chosen model errors
+        if (currentModel !== fallbackModel) {
+          console.warn(`Model ${currentModel} failed (${res.status}); falling back to ${fallbackModel}`);
+          currentModel = fallbackModel;
+          continue;
+        }
+        return { text: null, action: null };
+      }
       const data = await res.json();
       const choice = data.choices?.[0];
       const msg = choice?.message;
@@ -921,7 +961,8 @@ Deno.serve(async (req) => {
         const history = await loadConversationHistory(supabase, chatId, userId);
         const hasReplyTarget = !!msg.reply_to_message;
         const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history);
+        const pref = await getUserAIPref(supabase, userId);
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref);
         
         // Save conversation to memory
         await saveConversationMessage(supabase, chatId, userId, 'user', text);
@@ -1064,6 +1105,8 @@ async function handleCommand(supabase: any, msg: any, text: string, chatId: numb
     case '/identity': return await tg('sendMessage', { chat_id: chatId, text: AGENT_IDENTITY, parse_mode: 'HTML' });
     case '/soul': return await tg('sendMessage', { chat_id: chatId, text: AGENT_SOUL, parse_mode: 'HTML' });
     case '/complete': return await sendCompletionVideo(chatId);
+    case '/model': case '/models': return await cmdModel(supabase, chatId, userId);
+    case '/fast': return await cmdFast(supabase, chatId, userId);
     case '/report': return await cmdReport(chatId, userId, msg, fullName);
     case '/dice': return await cmdDice(chatId);
     case '/coinflip': return await cmdCoinFlip(chatId);
@@ -1614,6 +1657,28 @@ async function cmdWhoami(chatId: number, userId: number, username: string, fullN
     `• المحادثة: <code>${chatId}</code>`,
   ];
   await tg('sendMessage', { chat_id: chatId, text: lines.join('\n'), parse_mode: 'HTML' });
+}
+
+async function cmdModel(supabase: any, chatId: number, userId: number) {
+  const pref = await getUserAIPref(supabase, userId);
+  const current = AI_MODELS.find(m => m.id === pref.model);
+  const keyboard = AI_MODELS.map(m => [{
+    text: `${m.id === pref.model ? '✅ ' : ''}${m.name}${m.fast ? ' ⚡' : ''}`,
+    callback_data: `model_${m.id}`,
+  }]);
+  keyboard.push([{ text: pref.fast_mode ? '⚡ الوضع السريع: مُفعّل' : '🐢 الوضع السريع: مُعطّل', callback_data: 'fast_toggle' }]);
+  const text = `🧠 <b>اختر عقل شادي (LLM)</b>\n\n<b>الحالي:</b> ${current?.name || pref.model}\n<code>${pref.model}</code>\n\n⚡ = يدعم الوضع السريع (Priority tier).\nاستعمل الأزرار للتبديل بين النماذج.`;
+  await tg('sendMessage', { chat_id: chatId, text, parse_mode: 'HTML', reply_markup: { inline_keyboard: keyboard } });
+}
+
+async function cmdFast(supabase: any, chatId: number, userId: number) {
+  const pref = await getUserAIPref(supabase, userId);
+  const meta = AI_MODELS.find(m => m.id === pref.model);
+  if (!meta?.fast) {
+    return tg('sendMessage', { chat_id: chatId, text: `⚠️ الموديل الحالي (${meta?.name || pref.model}) لا يدعم الوضع السريع. اختر موديل عليه ⚡ من /model.` });
+  }
+  await setUserAIPref(supabase, userId, { fast_mode: !pref.fast_mode });
+  await tg('sendMessage', { chat_id: chatId, text: !pref.fast_mode ? '⚡ تم تفعيل الوضع السريع (Priority tier) — ردود أسرع، تكلفة أعلى.' : '🐢 تم إيقاف الوضع السريع.' });
 }
 
 async function cmdAddCoins(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
@@ -2333,6 +2398,29 @@ async function handleCallbackQuery(supabase: any, query: any) {
   const chatId = query.message.chat.id;
   const userId = query.from.id;
   const fullName = `${query.from.first_name || ''} ${query.from.last_name || ''}`.trim();
+
+  // OpenClaw model picker
+  if (data.startsWith('model_')) {
+    const modelId = data.slice('model_'.length);
+    const m = AI_MODELS.find(x => x.id === modelId);
+    if (!m) return tg('answerCallbackQuery', { callback_query_id: query.id, text: '❌ موديل غير معروف', show_alert: true });
+    await setUserAIPref(supabase, userId, { model: m.id });
+    await tg('answerCallbackQuery', { callback_query_id: query.id, text: `✅ تم اختيار ${m.name}`, show_alert: false });
+    await tg('editMessageText', {
+      chat_id: chatId, message_id: query.message.message_id,
+      text: `🧠 <b>الموديل الحالي:</b> ${m.name}\n<code>${m.id}</code>${m.fast ? '\n⚡ يدعم الوضع السريع (استعمل /fast)' : ''}`,
+      parse_mode: 'HTML',
+    });
+    return;
+  }
+  if (data === 'fast_toggle') {
+    const pref = await getUserAIPref(supabase, userId);
+    const meta = AI_MODELS.find(m => m.id === pref.model);
+    if (!meta?.fast) return tg('answerCallbackQuery', { callback_query_id: query.id, text: '⚠️ الموديل الحالي لا يدعم الوضع السريع', show_alert: true });
+    await setUserAIPref(supabase, userId, { fast_mode: !pref.fast_mode });
+    await tg('answerCallbackQuery', { callback_query_id: query.id, text: !pref.fast_mode ? '⚡ الوضع السريع مُفعّل' : '🐢 الوضع السريع مُعطّل', show_alert: false });
+    return;
+  }
 
   // Quiz answer
   if (data.startsWith('quiz_')) {

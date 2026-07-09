@@ -865,6 +865,27 @@ export type Database = {
         }
         Relationships: []
       }
+      user_ai_prefs: {
+        Row: {
+          fast_mode: boolean
+          model: string
+          updated_at: string
+          user_id: number
+        }
+        Insert: {
+          fast_mode?: boolean
+          model?: string
+          updated_at?: string
+          user_id: number
+        }
+        Update: {
+          fast_mode?: boolean
+          model?: string
+          updated_at?: string
+          user_id?: number
+        }
+        Relationships: []
+      }
       user_titles: {
         Row: {
           chat_id: number
