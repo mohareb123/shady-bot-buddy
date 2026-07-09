@@ -2375,6 +2375,29 @@ async function handleCallbackQuery(supabase: any, query: any) {
   const userId = query.from.id;
   const fullName = `${query.from.first_name || ''} ${query.from.last_name || ''}`.trim();
 
+  // OpenClaw model picker
+  if (data.startsWith('model_')) {
+    const modelId = data.slice('model_'.length);
+    const m = AI_MODELS.find(x => x.id === modelId);
+    if (!m) return tg('answerCallbackQuery', { callback_query_id: query.id, text: '❌ موديل غير معروف', show_alert: true });
+    await setUserAIPref(supabase, userId, { model: m.id });
+    await tg('answerCallbackQuery', { callback_query_id: query.id, text: `✅ تم اختيار ${m.name}`, show_alert: false });
+    await tg('editMessageText', {
+      chat_id: chatId, message_id: query.message.message_id,
+      text: `🧠 <b>الموديل الحالي:</b> ${m.name}\n<code>${m.id}</code>${m.fast ? '\n⚡ يدعم الوضع السريع (استعمل /fast)' : ''}`,
+      parse_mode: 'HTML',
+    });
+    return;
+  }
+  if (data === 'fast_toggle') {
+    const pref = await getUserAIPref(supabase, userId);
+    const meta = AI_MODELS.find(m => m.id === pref.model);
+    if (!meta?.fast) return tg('answerCallbackQuery', { callback_query_id: query.id, text: '⚠️ الموديل الحالي لا يدعم الوضع السريع', show_alert: true });
+    await setUserAIPref(supabase, userId, { fast_mode: !pref.fast_mode });
+    await tg('answerCallbackQuery', { callback_query_id: query.id, text: !pref.fast_mode ? '⚡ الوضع السريع مُفعّل' : '🐢 الوضع السريع مُعطّل', show_alert: false });
+    return;
+  }
+
   // Quiz answer
   if (data.startsWith('quiz_')) {
     const parts = data.split('_');
