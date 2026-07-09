@@ -438,7 +438,7 @@ async function runAgentTool(name: string, args: any): Promise<string> {
   }
 }
 
-async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = []): Promise<{ text: string | null; action: any | null }> {
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
@@ -493,19 +493,30 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
 
     const tools = [...RESEARCH_TOOLS, ...(isAdminOrDev ? AI_TOOLS : [])];
 
-    // Agent loop: up to 8 tool-call iterations (interactive browsing)
-    for (let step = 0; step < 8; step++) {
+    const selectedModel = pref?.model || DEFAULT_MODEL;
+    const modelMeta = AI_MODELS.find(m => m.id === selectedModel);
+    const useFast = !!pref?.fast_mode && !!modelMeta?.fast;
+    const fallbackModel = DEFAULT_MODEL;
+
+    // Agent loop: up to 20 tool-call iterations (deep agentic browsing, OpenClaw-style)
+    let currentModel = selectedModel;
+    for (let step = 0; step < 20; step++) {
+      const reqBody: any = { model: currentModel, messages, tools, tool_choice: 'auto' };
+      if (useFast && currentModel === selectedModel) reqBody.service_tier = 'priority';
       const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${LOVABLE_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'google/gemini-3-flash-preview',
-          messages,
-          tools,
-          tool_choice: 'auto',
-        }),
+        body: JSON.stringify(reqBody),
       });
-      if (!res.ok) return { text: null, action: null };
+      if (!res.ok) {
+        // Auto-fallback to default model once if the chosen model errors
+        if (currentModel !== fallbackModel) {
+          console.warn(`Model ${currentModel} failed (${res.status}); falling back to ${fallbackModel}`);
+          currentModel = fallbackModel;
+          continue;
+        }
+        return { text: null, action: null };
+      }
       const data = await res.json();
       const choice = data.choices?.[0];
       const msg = choice?.message;
