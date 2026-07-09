@@ -1594,6 +1594,26 @@ async function cmdBroadcast(supabase: any, chatId: number, userId: number, text:
   const { data: notif } = await supabase.from('notifications').insert({ message: msg, created_by: userId, is_sent: false }).select().single();
   await handleBroadcast(supabase, { type: 'text', message: msg, notification_id: notif?.id });
   await tg('sendMessage', { chat_id: chatId, text: '✅ تم إرسال الإشعار لجميع المجموعات' });
+  await sendCompletionVideo(chatId, '✅ تم البث بنجاح!');
+}
+
+// ============ OPENCLAW COMMANDS ============
+async function cmdNew(supabase: any, chatId: number, userId: number) {
+  await supabase.from('conversation_memory').delete().eq('chat_id', chatId).eq('user_id', userId);
+  await tg('sendMessage', { chat_id: chatId, text: '🆕 <b>جلسة جديدة</b>\nنسيت المحادثة السابقة. ابدأ من الصفر يا صاحبي.', parse_mode: 'HTML' });
+}
+
+async function cmdWhoami(chatId: number, userId: number, username: string, fullName: string) {
+  const isDev = userId === DEVELOPER_ID;
+  const lines = [
+    '🪪 <b>هويتك</b>',
+    `• الاسم: ${fullName || '—'}`,
+    `• المعرف: @${username || '—'}`,
+    `• ID: <code>${userId}</code>`,
+    `• الدور: ${isDev ? '👑 المطور (Global Admin)' : '👤 مستخدم'}`,
+    `• المحادثة: <code>${chatId}</code>`,
+  ];
+  await tg('sendMessage', { chat_id: chatId, text: lines.join('\n'), parse_mode: 'HTML' });
 }
 
 async function cmdAddCoins(supabase: any, chatId: number, userId: number, msg: any, parts: string[]) {
