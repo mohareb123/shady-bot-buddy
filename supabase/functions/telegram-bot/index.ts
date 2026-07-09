@@ -43,6 +43,35 @@ async function sendCompletionVideo(chatId: number, caption = '✅ تم بنجا�
   }
 }
 
+// ============ OPENCLAW MODEL CATALOG (multi-LLM) ============
+// Each user picks a model via /model. Fast tier is enabled only when the model supports it.
+const AI_MODELS: { id: string; name: string; fast: boolean; tier: string }[] = [
+  { id: 'google/gemini-3-flash-preview', name: 'Gemini 3 Flash (افتراضي)', fast: false, tier: 'balanced' },
+  { id: 'google/gemini-3.5-flash',        name: 'Gemini 3.5 Flash',          fast: false, tier: 'balanced' },
+  { id: 'google/gemini-3.1-pro-preview',  name: 'Gemini 3.1 Pro (تفكير)',    fast: false, tier: 'pro' },
+  { id: 'google/gemini-2.5-pro',          name: 'Gemini 2.5 Pro',            fast: false, tier: 'pro' },
+  { id: 'google/gemini-2.5-flash-lite',   name: 'Gemini 2.5 Flash Lite (سريع/رخيص)', fast: false, tier: 'lite' },
+  { id: 'openai/gpt-5',                   name: 'GPT-5',                     fast: true,  tier: 'pro' },
+  { id: 'openai/gpt-5-mini',              name: 'GPT-5 Mini',                fast: true,  tier: 'balanced' },
+  { id: 'openai/gpt-5-nano',              name: 'GPT-5 Nano',                fast: false, tier: 'lite' },
+  { id: 'openai/gpt-5.4',                 name: 'GPT-5.4 (تفكير عميق)',      fast: true,  tier: 'pro' },
+  { id: 'openai/gpt-5.5',                 name: 'GPT-5.5 (أقوى)',            fast: true,  tier: 'pro' },
+];
+const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
+
+async function getUserAIPref(supabase: any, userId: number): Promise<{ model: string; fast_mode: boolean }> {
+  const { data } = await supabase.from('user_ai_prefs').select('model, fast_mode').eq('user_id', userId).maybeSingle();
+  if (!data) return { model: DEFAULT_MODEL, fast_mode: false };
+  const known = AI_MODELS.find(m => m.id === data.model);
+  return { model: known ? data.model : DEFAULT_MODEL, fast_mode: !!data.fast_mode && !!known?.fast };
+}
+
+async function setUserAIPref(supabase: any, userId: number, patch: { model?: string; fast_mode?: boolean }) {
+  const current = await getUserAIPref(supabase, userId);
+  const next = { user_id: userId, model: patch.model ?? current.model, fast_mode: patch.fast_mode ?? current.fast_mode, updated_at: new Date().toISOString() };
+  await supabase.from('user_ai_prefs').upsert(next, { onConflict: 'user_id' });
+}
+
 // ============ TELEGRAM API HELPERS ============
 
 async function tg(method: string, body: any) {
