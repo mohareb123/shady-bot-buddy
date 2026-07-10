@@ -1178,7 +1178,16 @@ Deno.serve(async (req) => {
         
         if (aiResult.action) await executeAIAction(supabase, aiResult.action, msg, chatId, userId, fullName);
         if (aiResult.text) {
-          const sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          // Auto-detect image URLs (our storage bucket) and send as photo
+          const imgMatch = aiResult.text.match(/https?:\/\/[^\s)]+\.(?:png|jpe?g|webp)(?:\?[^\s)]*)?/i);
+          let sent;
+          if (imgMatch) {
+            const caption = aiResult.text.replace(imgMatch[0], '').trim().slice(0, 1024) || undefined;
+            sent = await tg('sendPhoto', { chat_id: chatId, photo: imgMatch[0], caption, reply_to_message_id: msg.message_id });
+            if (!sent?.ok) sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          } else {
+            sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          }
           // Track bot's message for reply detection
           if (sent?.result?.message_id) {
             await trackBotMessage(supabase, chatId, sent.result.message_id);
