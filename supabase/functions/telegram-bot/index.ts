@@ -1192,7 +1192,49 @@ Deno.serve(async (req) => {
         const hasReplyTarget = !!msg.reply_to_message;
         const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
         const pref = await getUserAIPref(supabase, userId);
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref);
+
+        // Typing indicator + live status message so the user sees the steps
+        tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+        const statusInit = await tg('sendMessage', {
+          chat_id: chatId,
+          text: '💭 <i>جاري التفكير...</i>',
+          parse_mode: 'HTML',
+          reply_to_message_id: msg.message_id,
+        }).catch(() => null);
+        const statusMsgId: number | null = statusInit?.result?.message_id ?? null;
+        const stepsLog: string[] = [];
+        let lastEdit = 0;
+        const editStatus = async (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => {
+          if (!statusMsgId) return;
+          if (info.phase === 'thinking') {
+            stepsLog.push(`💭 <i>خطوة ${info.step + 1}: تفكير...</i>`);
+          } else if (info.phase === 'tools' && info.tools?.length) {
+            const line = info.tools.map(t => TOOL_LABELS[t] || `🔧 ${t}`).join(' • ');
+            // Replace the last "thinking..." line with the actual tool being used
+            if (stepsLog.length && stepsLog[stepsLog.length - 1].startsWith('💭')) stepsLog.pop();
+            stepsLog.push(`✅ خطوة ${info.step + 1}: ${line}`);
+          } else if (info.phase === 'done') {
+            if (stepsLog.length && stepsLog[stepsLog.length - 1].startsWith('💭')) stepsLog.pop();
+          }
+          const now = Date.now();
+          if (now - lastEdit < 700 && info.phase !== 'done') return; // throttle edits
+          lastEdit = now;
+          const body = stepsLog.slice(-8).join('\n') || '💭 <i>جاري التفكير...</i>';
+          tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+          await tg('editMessageText', {
+            chat_id: chatId,
+            message_id: statusMsgId,
+            text: body,
+            parse_mode: 'HTML',
+          }).catch(() => {});
+        };
+
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref, editStatus);
+
+        // Delete the status message once we have a final answer
+        if (statusMsgId) {
+          tg('deleteMessage', { chat_id: chatId, message_id: statusMsgId }).catch(() => {});
+        }
         
         // Save conversation to memory
         await saveConversationMessage(supabase, chatId, userId, 'user', text);
