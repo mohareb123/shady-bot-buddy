@@ -294,6 +294,81 @@ const RESEARCH_TOOLS = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_image",
+      description: "توليد صورة من وصف نصي باستخدام Gemini Image (Nano Banana). أعِد الصورة للمستخدم عند طلبها.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "وصف تفصيلي للصورة المطلوبة" },
+          style: { type: "string", description: "نمط اختياري: photo, anime, 3d, sketch..." }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "screenshot_url",
+      description: "التقط لقطة شاشة لصفحة ويب معينة وأعِد رابط الصورة.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "translate_text",
+      description: "ترجم نصاً إلى لغة الهدف. استخدمها عندما يطلب المستخدم الترجمة.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          target_lang: { type: "string", description: "اللغة الهدف مثل ar, en, fr, es, tr..." }
+        },
+        required: ["text", "target_lang"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "math_eval",
+      description: "احسب تعبيراً رياضياً بدقة (يدعم +-*/^%، sqrt، sin، cos، tan، log، pi، e).",
+      parameters: {
+        type: "object",
+        properties: { expression: { type: "string" } },
+        required: ["expression"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_agent",
+      description: "متصفح تفاعلي كامل (Browserbase) مع AI. استخدمه لمهام تحتاج تسجيل دخول، تنقّل، ملء نماذج، أو تنفيذ عدة خطوات على موقع. مثلاً: احجز، اشتري، اقرأ خلف تسجيل دخول، تفاعل مع أزرار.",
+      parameters: {
+        type: "object",
+        properties: {
+          goal: { type: "string", description: "الهدف المطلوب بلغة طبيعية، مثال: افتح ويكيبيديا وابحث عن X ولخّص أول فقرة" },
+          start_url: { type: "string", description: "رابط البداية (اختياري)" },
+          context_id: { type: "string", description: "معرّف سياق محفوظ (اختياري) لاستخدام جلسة مسجّلة الدخول" }
+        },
+        required: ["goal"],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -434,6 +509,11 @@ async function runAgentTool(name: string, args: any): Promise<string> {
     case 'book_pdf_search': return await toolBookPdfSearch(args.title);
     case 'download_video': return await toolDownloadVideo(args.url);
     case 'spotify_lookup': return await toolSpotifyLookup(args.query);
+    case 'generate_image': return await toolGenerateImage(args.prompt, args.style);
+    case 'screenshot_url': return await toolScreenshotUrl(args.url);
+    case 'translate_text': return await toolTranslate(args.text, args.target_lang);
+    case 'math_eval': return await toolMathEval(args.expression);
+    case 'browser_agent': return await toolBrowserAgent(args.goal, args.start_url, args.context_id);
     default: return JSON.stringify({ error: 'unknown tool' });
   }
 }
