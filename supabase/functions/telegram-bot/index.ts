@@ -294,6 +294,81 @@ const RESEARCH_TOOLS = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "generate_image",
+      description: "توليد صورة من وصف نصي باستخدام Gemini Image (Nano Banana). أعِد الصورة للمستخدم عند طلبها.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "وصف تفصيلي للصورة المطلوبة" },
+          style: { type: "string", description: "نمط اختياري: photo, anime, 3d, sketch..." }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "screenshot_url",
+      description: "التقط لقطة شاشة لصفحة ويب معينة وأعِد رابط الصورة.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "translate_text",
+      description: "ترجم نصاً إلى لغة الهدف. استخدمها عندما يطلب المستخدم الترجمة.",
+      parameters: {
+        type: "object",
+        properties: {
+          text: { type: "string" },
+          target_lang: { type: "string", description: "اللغة الهدف مثل ar, en, fr, es, tr..." }
+        },
+        required: ["text", "target_lang"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "math_eval",
+      description: "احسب تعبيراً رياضياً بدقة (يدعم +-*/^%، sqrt، sin، cos، tan، log، pi، e).",
+      parameters: {
+        type: "object",
+        properties: { expression: { type: "string" } },
+        required: ["expression"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "browser_agent",
+      description: "متصفح تفاعلي كامل (Browserbase) مع AI. استخدمه لمهام تحتاج تسجيل دخول، تنقّل، ملء نماذج، أو تنفيذ عدة خطوات على موقع. مثلاً: احجز، اشتري، اقرأ خلف تسجيل دخول، تفاعل مع أزرار.",
+      parameters: {
+        type: "object",
+        properties: {
+          goal: { type: "string", description: "الهدف المطلوب بلغة طبيعية، مثال: افتح ويكيبيديا وابحث عن X ولخّص أول فقرة" },
+          start_url: { type: "string", description: "رابط البداية (اختياري)" },
+          context_id: { type: "string", description: "معرّف سياق محفوظ (اختياري) لاستخدام جلسة مسجّلة الدخول" }
+        },
+        required: ["goal"],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -426,6 +501,128 @@ async function toolSpotifyLookup(query: string): Promise<string> {
   } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
+// ============ EXTENDED OPENCLAW-STYLE TOOLS ============
+
+async function toolGenerateImage(prompt: string, style?: string): Promise<string> {
+  try {
+    const key = Deno.env.get('LOVABLE_API_KEY')!;
+    const full = style ? `${prompt}, style: ${style}` : prompt;
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-image',
+        messages: [{ role: 'user', content: full }],
+        modalities: ['image', 'text'],
+      }),
+    });
+    if (!res.ok) return JSON.stringify({ error: `image gen failed ${res.status}: ${(await res.text()).slice(0,300)}` });
+    const data = await res.json();
+    const images = data?.choices?.[0]?.message?.images || [];
+    const b64 = images[0]?.image_url?.url || null;
+    if (!b64) return JSON.stringify({ error: 'no image returned' });
+    // Upload to storage so we can send a real URL
+    try {
+      const supabase = getSupabase();
+      const raw = b64.startsWith('data:') ? b64.split(',')[1] : b64;
+      const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+      const path = `ai-images/${Date.now()}-${Math.random().toString(36).slice(2,8)}.png`;
+      const { error } = await supabase.storage.from('notification-media').upload(path, bytes, { contentType: 'image/png', upsert: false });
+      if (!error) {
+        const { data: pub } = supabase.storage.from('notification-media').getPublicUrl(path);
+        return JSON.stringify({ image_url: pub.publicUrl, prompt: full });
+      }
+    } catch { /* fall through */ }
+    return JSON.stringify({ image_data_url: b64, prompt: full });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolScreenshotUrl(url: string): Promise<string> {
+  try {
+    const sk = Deno.env.get('SCRAPER_API_KEY');
+    if (!sk) return JSON.stringify({ error: 'no SCRAPER_API_KEY' });
+    const ep = `https://api.scraperapi.com/?api_key=${sk}&screenshot=true&url=${encodeURIComponent(url)}`;
+    const r = await fetch(ep);
+    if (!r.ok) return JSON.stringify({ error: `screenshot failed ${r.status}` });
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const supabase = getSupabase();
+    const path = `screenshots/${Date.now()}.png`;
+    const { error } = await supabase.storage.from('notification-media').upload(path, buf, { contentType: 'image/png', upsert: false });
+    if (error) return JSON.stringify({ error: error.message });
+    const { data: pub } = supabase.storage.from('notification-media').getPublicUrl(path);
+    return JSON.stringify({ screenshot_url: pub.publicUrl, source_url: url });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolTranslate(text: string, target: string): Promise<string> {
+  try {
+    const key = Deno.env.get('LOVABLE_API_KEY')!;
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-lite',
+        messages: [
+          { role: 'system', content: `Translate the user text to language code "${target}". Reply with translation only, no preface.` },
+          { role: 'user', content: text },
+        ],
+      }),
+    });
+    const d = await res.json();
+    const out = d?.choices?.[0]?.message?.content?.trim() || null;
+    return JSON.stringify({ translation: out, target });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolMathEval(expr: string): Promise<string> {
+  try {
+    // Whitelist: digits, operators, parens, dot, letters (for functions), spaces
+    if (!/^[\d+\-*/%^().,\s a-zA-Z_]+$/.test(expr)) return JSON.stringify({ error: 'invalid characters' });
+    const safe = expr
+      .replace(/\^/g, '**')
+      .replace(/\bpi\b/gi, 'Math.PI')
+      .replace(/\be\b/g, 'Math.E')
+      .replace(/\b(sqrt|sin|cos|tan|log|abs|floor|ceil|round|min|max|pow|exp)\b/g, 'Math.$1');
+    const result = Function(`"use strict"; return (${safe});`)();
+    return JSON.stringify({ expression: expr, result });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolBrowserAgent(goal: string, startUrl?: string, contextId?: string): Promise<string> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const call = async (body: any) => {
+      const r = await fetch(`${supabaseUrl}/functions/v1/browser-agent`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return r.json();
+    };
+    // 1) Create session
+    const sess = await call({ action: 'create_session', context_id: contextId, persist: true });
+    if (!sess?.success) return JSON.stringify({ error: 'session failed', detail: sess });
+    const sessionId = sess.data.id;
+    // 2) Optional start URL
+    if (startUrl) {
+      await call({ action: 'run_step', session_id: sessionId, step: { action: 'goto', url: startUrl } });
+    }
+    // 3) AI plan-execute
+    const exec = await call({ action: 'ai_execute', session_id: sessionId, goal });
+    // 4) Fetch last screenshot
+    const shot = await call({ action: 'screenshot', session_id: sessionId }).catch(() => null);
+    // 5) End
+    await call({ action: 'end_session', session_id: sessionId }).catch(() => null);
+    return JSON.stringify({
+      goal,
+      screenshot_url: shot?.data?.screenshot || sess.data.last_screenshot || null,
+      live_view_url: sess.data.live_view_url,
+      steps: exec?.data?.results?.map((r: any) => ({ action: r.step?.action, output: r.output ?? r.error })).slice(0, 20),
+    });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
 async function runAgentTool(name: string, args: any): Promise<string> {
   switch (name) {
     case 'web_search': return await toolWebSearch(args.query, args.limit || 5);
@@ -434,6 +631,11 @@ async function runAgentTool(name: string, args: any): Promise<string> {
     case 'book_pdf_search': return await toolBookPdfSearch(args.title);
     case 'download_video': return await toolDownloadVideo(args.url);
     case 'spotify_lookup': return await toolSpotifyLookup(args.query);
+    case 'generate_image': return await toolGenerateImage(args.prompt, args.style);
+    case 'screenshot_url': return await toolScreenshotUrl(args.url);
+    case 'translate_text': return await toolTranslate(args.text, args.target_lang);
+    case 'math_eval': return await toolMathEval(args.expression);
+    case 'browser_agent': return await toolBrowserAgent(args.goal, args.start_url, args.context_id);
     default: return JSON.stringify({ error: 'unknown tool' });
   }
 }
@@ -454,8 +656,15 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 - book_pdf_search: كتب PDF من مصادر موثوقة.
 - download_video: تنزيل فيديو/صوت من يوتيوب/تيك توك/انستغرام/تويتر/فيسبوك/سبوتيفاي (كوكيز اليوتيوب وسبوتيفاي مفعّلة بإذن المالك).
 - spotify_lookup: بحث سبوتيفاي عن أغانٍ/ألبومات/فنانين.
+- generate_image: توليد صور جديدة بالذكاء الاصطناعي من وصف نصي (Nano Banana).
+- screenshot_url: لقطة شاشة كاملة لأي رابط.
+- translate_text: ترجمة نص لأي لغة.
+- math_eval: حساب دقيق للتعابير الرياضية.
+- browser_agent: متصفح كامل يتحكم فيه AI (Browserbase) — للمهام المعقّدة: تسجيل دخول، ملء نماذج، تنقّل متعدد الخطوات.
 
 المتصفح التفاعلي: يمكنك استدعاء browse_url عدة مرات متتالية للتنقل بين الروابط (كل استدعاء يعيد لك قائمة روابط الصفحة). خطط، تصفّح، استخرج البيانات، ثم أجب.
+للمهام التي تتطلب تفاعلاً حقيقياً (زر، فورم، تسجيل دخول) استخدم browser_agent بدلاً من browse_url.
+عند توليد صورة أو لقطة شاشة: ضع الرابط الكامل بشكل واضح في ردك حتى يظهر معاينة تلقائية للمستخدم.
 
 قواعد صارمة:
 1. عند البحث استعمل الأدوات مرة أو أكثر، ثم قدّم إجابة منظمة واذكر المصادر (روابط URL كاملة).
@@ -969,7 +1178,16 @@ Deno.serve(async (req) => {
         
         if (aiResult.action) await executeAIAction(supabase, aiResult.action, msg, chatId, userId, fullName);
         if (aiResult.text) {
-          const sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          // Auto-detect image URLs (our storage bucket) and send as photo
+          const imgMatch = aiResult.text.match(/https?:\/\/[^\s)]+\.(?:png|jpe?g|webp)(?:\?[^\s)]*)?/i);
+          let sent;
+          if (imgMatch) {
+            const caption = aiResult.text.replace(imgMatch[0], '').trim().slice(0, 1024) || undefined;
+            sent = await tg('sendPhoto', { chat_id: chatId, photo: imgMatch[0], caption, reply_to_message_id: msg.message_id });
+            if (!sent?.ok) sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          } else {
+            sent = await tg('sendMessage', { chat_id: chatId, text: aiResult.text, reply_to_message_id: msg.message_id });
+          }
           // Track bot's message for reply detection
           if (sent?.result?.message_id) {
             await trackBotMessage(supabase, chatId, sent.result.message_id);
