@@ -501,6 +501,128 @@ async function toolSpotifyLookup(query: string): Promise<string> {
   } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
+// ============ EXTENDED OPENCLAW-STYLE TOOLS ============
+
+async function toolGenerateImage(prompt: string, style?: string): Promise<string> {
+  try {
+    const key = Deno.env.get('LOVABLE_API_KEY')!;
+    const full = style ? `${prompt}, style: ${style}` : prompt;
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-image',
+        messages: [{ role: 'user', content: full }],
+        modalities: ['image', 'text'],
+      }),
+    });
+    if (!res.ok) return JSON.stringify({ error: `image gen failed ${res.status}: ${(await res.text()).slice(0,300)}` });
+    const data = await res.json();
+    const images = data?.choices?.[0]?.message?.images || [];
+    const b64 = images[0]?.image_url?.url || null;
+    if (!b64) return JSON.stringify({ error: 'no image returned' });
+    // Upload to storage so we can send a real URL
+    try {
+      const supabase = getSupabase();
+      const raw = b64.startsWith('data:') ? b64.split(',')[1] : b64;
+      const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+      const path = `ai-images/${Date.now()}-${Math.random().toString(36).slice(2,8)}.png`;
+      const { error } = await supabase.storage.from('notification-media').upload(path, bytes, { contentType: 'image/png', upsert: false });
+      if (!error) {
+        const { data: pub } = supabase.storage.from('notification-media').getPublicUrl(path);
+        return JSON.stringify({ image_url: pub.publicUrl, prompt: full });
+      }
+    } catch { /* fall through */ }
+    return JSON.stringify({ image_data_url: b64, prompt: full });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolScreenshotUrl(url: string): Promise<string> {
+  try {
+    const sk = Deno.env.get('SCRAPER_API_KEY');
+    if (!sk) return JSON.stringify({ error: 'no SCRAPER_API_KEY' });
+    const ep = `https://api.scraperapi.com/?api_key=${sk}&screenshot=true&url=${encodeURIComponent(url)}`;
+    const r = await fetch(ep);
+    if (!r.ok) return JSON.stringify({ error: `screenshot failed ${r.status}` });
+    const buf = new Uint8Array(await r.arrayBuffer());
+    const supabase = getSupabase();
+    const path = `screenshots/${Date.now()}.png`;
+    const { error } = await supabase.storage.from('notification-media').upload(path, buf, { contentType: 'image/png', upsert: false });
+    if (error) return JSON.stringify({ error: error.message });
+    const { data: pub } = supabase.storage.from('notification-media').getPublicUrl(path);
+    return JSON.stringify({ screenshot_url: pub.publicUrl, source_url: url });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolTranslate(text: string, target: string): Promise<string> {
+  try {
+    const key = Deno.env.get('LOVABLE_API_KEY')!;
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'google/gemini-2.5-flash-lite',
+        messages: [
+          { role: 'system', content: `Translate the user text to language code "${target}". Reply with translation only, no preface.` },
+          { role: 'user', content: text },
+        ],
+      }),
+    });
+    const d = await res.json();
+    const out = d?.choices?.[0]?.message?.content?.trim() || null;
+    return JSON.stringify({ translation: out, target });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolMathEval(expr: string): Promise<string> {
+  try {
+    // Whitelist: digits, operators, parens, dot, letters (for functions), spaces
+    if (!/^[\d+\-*/%^().,\s a-zA-Z_]+$/.test(expr)) return JSON.stringify({ error: 'invalid characters' });
+    const safe = expr
+      .replace(/\^/g, '**')
+      .replace(/\bpi\b/gi, 'Math.PI')
+      .replace(/\be\b/g, 'Math.E')
+      .replace(/\b(sqrt|sin|cos|tan|log|abs|floor|ceil|round|min|max|pow|exp)\b/g, 'Math.$1');
+    const result = Function(`"use strict"; return (${safe});`)();
+    return JSON.stringify({ expression: expr, result });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolBrowserAgent(goal: string, startUrl?: string, contextId?: string): Promise<string> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const call = async (body: any) => {
+      const r = await fetch(`${supabaseUrl}/functions/v1/browser-agent`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return r.json();
+    };
+    // 1) Create session
+    const sess = await call({ action: 'create_session', context_id: contextId, persist: true });
+    if (!sess?.success) return JSON.stringify({ error: 'session failed', detail: sess });
+    const sessionId = sess.data.id;
+    // 2) Optional start URL
+    if (startUrl) {
+      await call({ action: 'run_step', session_id: sessionId, step: { action: 'goto', url: startUrl } });
+    }
+    // 3) AI plan-execute
+    const exec = await call({ action: 'ai_execute', session_id: sessionId, goal });
+    // 4) Fetch last screenshot
+    const shot = await call({ action: 'screenshot', session_id: sessionId }).catch(() => null);
+    // 5) End
+    await call({ action: 'end_session', session_id: sessionId }).catch(() => null);
+    return JSON.stringify({
+      goal,
+      screenshot_url: shot?.data?.screenshot || sess.data.last_screenshot || null,
+      live_view_url: sess.data.live_view_url,
+      steps: exec?.data?.results?.map((r: any) => ({ action: r.step?.action, output: r.output ?? r.error })).slice(0, 20),
+    });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
 async function runAgentTool(name: string, args: any): Promise<string> {
   switch (name) {
     case 'web_search': return await toolWebSearch(args.query, args.limit || 5);
