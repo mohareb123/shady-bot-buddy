@@ -59,6 +59,22 @@ const AI_MODELS: { id: string; name: string; fast: boolean; tier: string }[] = [
 ];
 const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
 
+// Human-friendly labels for tool progress display
+const TOOL_LABELS: Record<string, string> = {
+  web_search: '🔎 بحث في الإنترنت',
+  browse_url: '🌐 قراءة صفحة',
+  youtube_search: '▶️ بحث يوتيوب',
+  book_pdf_search: '📚 بحث كتب PDF',
+  download_video: '⬇️ تنزيل وسائط',
+  spotify_lookup: '🎵 بحث سبوتيفاي',
+  generate_image: '🎨 توليد صورة',
+  screenshot_url: '📸 لقطة شاشة',
+  translate_text: '🌍 ترجمة',
+  math_eval: '🧮 حساب',
+  browser_agent: '🤖 وكيل متصفح',
+  execute_action: '⚙️ تنفيذ إجراء',
+};
+
 async function getUserAIPref(supabase: any, userId: number): Promise<{ model: string; fast_mode: boolean }> {
   const { data } = await supabase.from('user_ai_prefs').select('model, fast_mode').eq('user_id', userId).maybeSingle();
   if (!data) return { model: DEFAULT_MODEL, fast_mode: false };
@@ -640,7 +656,7 @@ async function runAgentTool(name: string, args: any): Promise<string> {
   }
 }
 
-async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }): Promise<{ text: string | null; action: any | null }> {
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }, onProgress?: (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => Promise<void> | void): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
@@ -707,9 +723,10 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
     const useFast = !!pref?.fast_mode && !!modelMeta?.fast;
     const fallbackModel = DEFAULT_MODEL;
 
-    // Agent loop: up to 20 tool-call iterations (deep agentic browsing, OpenClaw-style)
+    // Agent loop: up to 12 tool-call iterations (fast + still deep)
     let currentModel = selectedModel;
-    for (let step = 0; step < 20; step++) {
+    for (let step = 0; step < 12; step++) {
+      try { await onProgress?.({ step, phase: 'thinking' }); } catch {}
       const reqBody: any = { model: currentModel, messages, tools, tool_choice: 'auto' };
       if (useFast && currentModel === selectedModel) reqBody.service_tier = 'priority';
       const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -733,12 +750,14 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
 
       const toolCalls = msg.tool_calls || [];
       if (toolCalls.length === 0) {
+        try { await onProgress?.({ step, phase: 'done' }); } catch {}
         return { text: msg.content || null, action: null };
       }
 
       // Handle execute_action immediately (short-circuit)
       const exec = toolCalls.find((tc: any) => tc.function?.name === 'execute_action');
       if (exec) {
+        try { await onProgress?.({ step, phase: 'tools', tools: ['execute_action'] }); } catch {}
         try {
           const action = JSON.parse(exec.function.arguments);
           return { text: action.reply_text || null, action };
@@ -747,16 +766,18 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
 
       // Otherwise run research tools and feed results back
       messages.push(msg);
-      for (const tc of toolCalls) {
+      const toolNames = toolCalls.map((tc: any) => tc.function?.name).filter(Boolean);
+      try { await onProgress?.({ step, phase: 'tools', tools: toolNames }); } catch {}
+      // Run tool calls in parallel to cut latency
+      const toolResults = await Promise.all(toolCalls.map(async (tc: any) => {
         const name = tc.function?.name;
         let args: any = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
         const result = await runAgentTool(name, args);
-        messages.push({
-          role: 'tool',
-          tool_call_id: tc.id,
-          content: result.slice(0, 8000),
-        });
+        return { tool_call_id: tc.id, content: result.slice(0, 8000) };
+      }));
+      for (const r of toolResults) {
+        messages.push({ role: 'tool', tool_call_id: r.tool_call_id, content: r.content });
       }
     }
     return { text: 'انتهت خطوات البحث دون إجابة نهائية. جرّب صياغة أخرى.', action: null };
@@ -1171,7 +1192,49 @@ Deno.serve(async (req) => {
         const hasReplyTarget = !!msg.reply_to_message;
         const userIsAdmin = isDeveloper(userId) || (!isPrivate && await isAdmin(chatId, userId));
         const pref = await getUserAIPref(supabase, userId);
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref);
+
+        // Typing indicator + live status message so the user sees the steps
+        tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+        const statusInit = await tg('sendMessage', {
+          chat_id: chatId,
+          text: '💭 <i>جاري التفكير...</i>',
+          parse_mode: 'HTML',
+          reply_to_message_id: msg.message_id,
+        }).catch(() => null);
+        const statusMsgId: number | null = statusInit?.result?.message_id ?? null;
+        const stepsLog: string[] = [];
+        let lastEdit = 0;
+        const editStatus = async (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => {
+          if (!statusMsgId) return;
+          if (info.phase === 'thinking') {
+            stepsLog.push(`💭 <i>خطوة ${info.step + 1}: تفكير...</i>`);
+          } else if (info.phase === 'tools' && info.tools?.length) {
+            const line = info.tools.map(t => TOOL_LABELS[t] || `🔧 ${t}`).join(' • ');
+            // Replace the last "thinking..." line with the actual tool being used
+            if (stepsLog.length && stepsLog[stepsLog.length - 1].startsWith('💭')) stepsLog.pop();
+            stepsLog.push(`✅ خطوة ${info.step + 1}: ${line}`);
+          } else if (info.phase === 'done') {
+            if (stepsLog.length && stepsLog[stepsLog.length - 1].startsWith('💭')) stepsLog.pop();
+          }
+          const now = Date.now();
+          if (now - lastEdit < 700 && info.phase !== 'done') return; // throttle edits
+          lastEdit = now;
+          const body = stepsLog.slice(-8).join('\n') || '💭 <i>جاري التفكير...</i>';
+          tg('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
+          await tg('editMessageText', {
+            chat_id: chatId,
+            message_id: statusMsgId,
+            text: body,
+            parse_mode: 'HTML',
+          }).catch(() => {});
+        };
+
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref, editStatus);
+
+        // Delete the status message once we have a final answer
+        if (statusMsgId) {
+          tg('deleteMessage', { chat_id: chatId, message_id: statusMsgId }).catch(() => {});
+        }
         
         // Save conversation to memory
         await saveConversationMessage(supabase, chatId, userId, 'user', text);
