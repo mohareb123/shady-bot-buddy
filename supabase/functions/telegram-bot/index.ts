@@ -59,6 +59,22 @@ const AI_MODELS: { id: string; name: string; fast: boolean; tier: string }[] = [
 ];
 const DEFAULT_MODEL = 'google/gemini-3-flash-preview';
 
+// Human-friendly labels for tool progress display
+const TOOL_LABELS: Record<string, string> = {
+  web_search: '🔎 بحث في الإنترنت',
+  browse_url: '🌐 قراءة صفحة',
+  youtube_search: '▶️ بحث يوتيوب',
+  book_pdf_search: '📚 بحث كتب PDF',
+  download_video: '⬇️ تنزيل وسائط',
+  spotify_lookup: '🎵 بحث سبوتيفاي',
+  generate_image: '🎨 توليد صورة',
+  screenshot_url: '📸 لقطة شاشة',
+  translate_text: '🌍 ترجمة',
+  math_eval: '🧮 حساب',
+  browser_agent: '🤖 وكيل متصفح',
+  execute_action: '⚙️ تنفيذ إجراء',
+};
+
 async function getUserAIPref(supabase: any, userId: number): Promise<{ model: string; fast_mode: boolean }> {
   const { data } = await supabase.from('user_ai_prefs').select('model, fast_mode').eq('user_id', userId).maybeSingle();
   if (!data) return { model: DEFAULT_MODEL, fast_mode: false };
