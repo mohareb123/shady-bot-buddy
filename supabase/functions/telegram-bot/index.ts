@@ -910,6 +910,8 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 - youtube_download_audio: استخراج رابط MP3 مباشر من فيديو يوتيوب.
 - spotify_info: معلومات مقطع/ألبوم/قائمة سبوتيفاي (عبر oEmbed).
 - screenshot_url: لقطة شاشة كاملة لأي رابط.
+- memory_save / memory_recall / memory_forget: ذاكرة دائمة عن المستخدم (memory-wiki). احفظ اسمه وتفضيلاته واسترجعها بلا سؤال متكرر.
+- llm_task: مهمة فرعية بنموذج آخر (تلخيص/تحليل نص طويل/إعادة صياغة).
 - translate_text: ترجمة نص لأي لغة.
 - math_eval: حساب دقيق للتعابير الرياضية.
 - browser_agent: متصفح كامل يتحكم فيه AI (Browserbase) — للمهام المعقّدة: تسجيل دخول، ملء نماذج، تنقّل متعدد الخطوات.
