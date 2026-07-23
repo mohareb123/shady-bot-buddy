@@ -443,6 +443,60 @@ const RESEARCH_TOOLS = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_save",
+      description: "احفظ حقيقة أو تفضيل عن المستخدم بشكل دائم (memory-wiki). استخدمها عندما يخبرك المستخدم بشيء يجب تذكّره لاحقاً (اسمه، هوايته، لغته، تفضيلاته...).",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "معرّف قصير مثل: name, favorite_color, city" },
+          value: { type: "string", description: "القيمة المراد حفظها" }
+        },
+        required: ["key", "value"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_recall",
+      description: "استرجع كل الحقائق المحفوظة عن المستخدم الحالي (memory-wiki). استعملها في بداية المحادثة أو عندما يسأل المستخدم ماذا تذكر عنه.",
+      parameters: { type: "object", properties: {}, additionalProperties: false }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_forget",
+      description: "احذف حقيقة محفوظة بمفتاح معيّن أو كل الذاكرة إذا key='*'.",
+      parameters: {
+        type: "object",
+        properties: { key: { type: "string" } },
+        required: ["key"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "llm_task",
+      description: "مهمة فرعية بنموذج AI مختلف (sub-agent). استخدمه لتلخيص، إعادة صياغة، تحليل نص طويل، أو مهمة تحتاج نموذج أقوى/أسرع مؤقتاً.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "المهمة التفصيلية" },
+          model: { type: "string", description: "اختياري: google/gemini-3.6-flash | google/gemini-2.5-pro | openai/gpt-5-mini" },
+          system: { type: "string", description: "تعليمات نظام اختيارية" }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
