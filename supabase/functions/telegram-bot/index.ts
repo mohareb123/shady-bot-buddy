@@ -790,6 +790,10 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 - download_video: تنزيل فيديو/صوت من يوتيوب/تيك توك/انستغرام/تويتر/فيسبوك/سبوتيفاي (كوكيز اليوتيوب وسبوتيفاي مفعّلة بإذن المالك).
 - spotify_lookup: بحث سبوتيفاي عن أغانٍ/ألبومات/فنانين.
 - generate_image: توليد صور جديدة بالذكاء الاصطناعي من وصف نصي (Nano Banana).
+- pollinations_image: توليد صور مجاني وسريع بدون مفتاح (Pollinations). استخدمه لو فشل generate_image.
+- youtube_info: معلومات فيديو يوتيوب (عبر oEmbed، بدون مفتاح).
+- youtube_download_audio: استخراج رابط MP3 مباشر من فيديو يوتيوب.
+- spotify_info: معلومات مقطع/ألبوم/قائمة سبوتيفاي (عبر oEmbed).
 - screenshot_url: لقطة شاشة كاملة لأي رابط.
 - translate_text: ترجمة نص لأي لغة.
 - math_eval: حساب دقيق للتعابير الرياضية.
