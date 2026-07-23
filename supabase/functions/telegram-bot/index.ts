@@ -710,8 +710,67 @@ async function runAgentTool(name: string, args: any): Promise<string> {
     case 'translate_text': return await toolTranslate(args.text, args.target_lang);
     case 'math_eval': return await toolMathEval(args.expression);
     case 'browser_agent': return await toolBrowserAgent(args.goal, args.start_url, args.context_id);
+    case 'pollinations_image': return await toolPollinationsImage(args.prompt, args.width, args.height, args.model, args.seed);
+    case 'youtube_info': return await toolYoutubeInfo(args.url);
+    case 'spotify_info': return await toolSpotifyInfo(args.url);
+    case 'youtube_download_audio': return await toolYoutubeDownloadAudio(args.url);
     default: return JSON.stringify({ error: 'unknown tool' });
   }
+}
+
+// ============ OPENCLAW-STYLE FREE TOOLS ============
+async function toolPollinationsImage(prompt: string, width = 1024, height = 1024, model = 'flux', seed?: number): Promise<string> {
+  const w = Math.min(Math.max(512, Number(width) || 1024), 2048);
+  const h = Math.min(Math.max(512, Number(height) || 1024), 2048);
+  const params = new URLSearchParams({ width: String(w), height: String(h), nologo: 'true', model: model || 'flux' });
+  if (seed) params.set('seed', String(seed));
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}?${params}`;
+  return JSON.stringify({ image_url: url, prompt, model, width: w, height: h, note: 'مجاني عبر Pollinations AI' });
+}
+
+async function toolYoutubeInfo(url: string): Promise<string> {
+  try {
+    const r = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`, {
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!r.ok) return JSON.stringify({ error: `oEmbed HTTP ${r.status}`, url });
+    const d = await r.json();
+    return JSON.stringify({ title: d.title, channel: d.author_name, channel_url: d.author_url, thumbnail: d.thumbnail_url, url });
+  } catch (e) { return JSON.stringify({ error: String(e), url }); }
+}
+
+async function toolSpotifyInfo(url: string): Promise<string> {
+  try {
+    const r = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(url)}`, {
+      signal: AbortSignal.timeout(8000),
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+    if (!r.ok) return JSON.stringify({ error: `oEmbed HTTP ${r.status}`, url });
+    const d = await r.json();
+    return JSON.stringify({ title: d.title, provider: d.provider_name, thumbnail: d.thumbnail_url, url });
+  } catch (e) { return JSON.stringify({ error: String(e), url }); }
+}
+
+async function toolYoutubeDownloadAudio(url: string): Promise<string> {
+  const endpoints = [
+    'https://api.cobalt.tools/api/json',
+    'https://co.wuk.sh/api/json',
+    'https://olly.imput.net/api/json',
+  ];
+  for (const ep of endpoints) {
+    try {
+      const r = await fetch(ep, {
+        method: 'POST',
+        headers: { 'Accept': 'application/json', 'Content-Type': 'application/json', 'User-Agent': 'Mozilla/5.0' },
+        body: JSON.stringify({ url, isAudioOnly: true, aFormat: 'mp3', filenamePattern: 'basic' }),
+      });
+      const d = await r.json();
+      if (d.status === 'stream' || d.status === 'redirect' || d.url) {
+        return JSON.stringify({ audio_url: d.url, status: d.status, endpoint: ep });
+      }
+    } catch { /* next */ }
+  }
+  return JSON.stringify({ error: 'كل خوادم استخراج الصوت رفضت. جرّب رابطاً آخر.' });
 }
 
 async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }, onProgress?: (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => Promise<void> | void): Promise<{ text: string | null; action: any | null }> {
