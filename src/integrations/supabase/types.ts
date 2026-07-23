@@ -886,6 +886,36 @@ export type Database = {
         }
         Relationships: []
       }
+      user_memories: {
+        Row: {
+          chat_id: number | null
+          created_at: string
+          id: string
+          key: string
+          updated_at: string
+          user_id: number
+          value: string
+        }
+        Insert: {
+          chat_id?: number | null
+          created_at?: string
+          id?: string
+          key: string
+          updated_at?: string
+          user_id: number
+          value: string
+        }
+        Update: {
+          chat_id?: number | null
+          created_at?: string
+          id?: string
+          key?: string
+          updated_at?: string
+          user_id?: number
+          value?: string
+        }
+        Relationships: []
+      }
       user_titles: {
         Row: {
           chat_id: number

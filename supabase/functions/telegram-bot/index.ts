@@ -443,6 +443,60 @@ const RESEARCH_TOOLS = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_save",
+      description: "احفظ حقيقة أو تفضيل عن المستخدم بشكل دائم (memory-wiki). استخدمها عندما يخبرك المستخدم بشيء يجب تذكّره لاحقاً (اسمه، هوايته، لغته، تفضيلاته...).",
+      parameters: {
+        type: "object",
+        properties: {
+          key: { type: "string", description: "معرّف قصير مثل: name, favorite_color, city" },
+          value: { type: "string", description: "القيمة المراد حفظها" }
+        },
+        required: ["key", "value"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_recall",
+      description: "استرجع كل الحقائق المحفوظة عن المستخدم الحالي (memory-wiki). استعملها في بداية المحادثة أو عندما يسأل المستخدم ماذا تذكر عنه.",
+      parameters: { type: "object", properties: {}, additionalProperties: false }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "memory_forget",
+      description: "احذف حقيقة محفوظة بمفتاح معيّن أو كل الذاكرة إذا key='*'.",
+      parameters: {
+        type: "object",
+        properties: { key: { type: "string" } },
+        required: ["key"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "llm_task",
+      description: "مهمة فرعية بنموذج AI مختلف (sub-agent). استخدمه لتلخيص، إعادة صياغة، تحليل نص طويل، أو مهمة تحتاج نموذج أقوى/أسرع مؤقتاً.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "المهمة التفصيلية" },
+          model: { type: "string", description: "اختياري: google/gemini-3.6-flash | google/gemini-2.5-pro | openai/gpt-5-mini" },
+          system: { type: "string", description: "تعليمات نظام اختيارية" }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
@@ -697,7 +751,8 @@ async function toolBrowserAgent(goal: string, startUrl?: string, contextId?: str
   } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
-async function runAgentTool(name: string, args: any): Promise<string> {
+type AgentCtx = { userId?: number; chatId?: number };
+async function runAgentTool(name: string, args: any, ctx: AgentCtx = {}): Promise<string> {
   switch (name) {
     case 'web_search': return await toolWebSearch(args.query, args.limit || 5);
     case 'browse_url': return await toolBrowseUrl(args.url);
@@ -714,6 +769,10 @@ async function runAgentTool(name: string, args: any): Promise<string> {
     case 'youtube_info': return await toolYoutubeInfo(args.url);
     case 'spotify_info': return await toolSpotifyInfo(args.url);
     case 'youtube_download_audio': return await toolYoutubeDownloadAudio(args.url);
+    case 'memory_save': return await toolMemorySave(args.key, args.value, ctx.userId, ctx.chatId);
+    case 'memory_recall': return await toolMemoryRecall(ctx.userId);
+    case 'memory_forget': return await toolMemoryForget(args.key, ctx.userId);
+    case 'llm_task': return await toolLlmTask(args.prompt, args.model, args.system);
     default: return JSON.stringify({ error: 'unknown tool' });
   }
 }
@@ -773,7 +832,63 @@ async function toolYoutubeDownloadAudio(url: string): Promise<string> {
   return JSON.stringify({ error: 'كل خوادم استخراج الصوت رفضت. جرّب رابطاً آخر.' });
 }
 
-async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }, onProgress?: (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => Promise<void> | void): Promise<{ text: string | null; action: any | null }> {
+// ── memory-wiki (persistent user memory) ──
+async function toolMemorySave(key: string, value: string, userId?: number, chatId?: number): Promise<string> {
+  if (!userId) return JSON.stringify({ error: 'no user context' });
+  if (!key || !value) return JSON.stringify({ error: 'key and value required' });
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.from('user_memories').upsert(
+      { user_id: userId, chat_id: chatId || null, key: String(key).slice(0, 64), value: String(value).slice(0, 2000), updated_at: new Date().toISOString() },
+      { onConflict: 'user_id,key' },
+    );
+    if (error) return JSON.stringify({ error: error.message });
+    return JSON.stringify({ saved: true, key, value });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolMemoryRecall(userId?: number): Promise<string> {
+  if (!userId) return JSON.stringify({ error: 'no user context' });
+  try {
+    const supabase = getSupabase();
+    const { data, error } = await supabase.from('user_memories').select('key,value,updated_at').eq('user_id', userId).order('updated_at', { ascending: false }).limit(50);
+    if (error) return JSON.stringify({ error: error.message });
+    return JSON.stringify({ memories: data || [] });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function toolMemoryForget(key: string, userId?: number): Promise<string> {
+  if (!userId) return JSON.stringify({ error: 'no user context' });
+  try {
+    const supabase = getSupabase();
+    let q = supabase.from('user_memories').delete().eq('user_id', userId);
+    if (key !== '*') q = q.eq('key', key);
+    const { error } = await q;
+    if (error) return JSON.stringify({ error: error.message });
+    return JSON.stringify({ forgotten: true, key });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+// ── llm-task (sub-agent one-shot with a chosen model) ──
+async function toolLlmTask(prompt: string, model?: string, system?: string): Promise<string> {
+  try {
+    const key = Deno.env.get('LOVABLE_API_KEY')!;
+    const m = model || 'google/gemini-3.6-flash';
+    const messages: any[] = [];
+    if (system) messages.push({ role: 'system', content: system });
+    messages.push({ role: 'user', content: prompt });
+    const res = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: m, messages }),
+    });
+    if (!res.ok) return JSON.stringify({ error: `llm_task ${res.status}: ${(await res.text()).slice(0, 300)}` });
+    const d = await res.json();
+    return JSON.stringify({ result: d?.choices?.[0]?.message?.content || null, model: m });
+  } catch (e) { return JSON.stringify({ error: String(e) }); }
+}
+
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }, onProgress?: (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => Promise<void> | void, ctx: AgentCtx = {}): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
@@ -795,6 +910,8 @@ async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAd
 - youtube_download_audio: استخراج رابط MP3 مباشر من فيديو يوتيوب.
 - spotify_info: معلومات مقطع/ألبوم/قائمة سبوتيفاي (عبر oEmbed).
 - screenshot_url: لقطة شاشة كاملة لأي رابط.
+- memory_save / memory_recall / memory_forget: ذاكرة دائمة عن المستخدم (memory-wiki). احفظ اسمه وتفضيلاته واسترجعها بلا سؤال متكرر.
+- llm_task: مهمة فرعية بنموذج آخر (تلخيص/تحليل نص طويل/إعادة صياغة).
 - translate_text: ترجمة نص لأي لغة.
 - math_eval: حساب دقيق للتعابير الرياضية.
 - browser_agent: متصفح كامل يتحكم فيه AI (Browserbase) — للمهام المعقّدة: تسجيل دخول، ملء نماذج، تنقّل متعدد الخطوات.
@@ -894,7 +1011,7 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
         const name = tc.function?.name;
         let args: any = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
-        const result = await runAgentTool(name, args);
+        const result = await runAgentTool(name, args, ctx);
         return { tool_call_id: tc.id, content: result.slice(0, 8000) };
       }));
       for (const r of toolResults) {
@@ -1350,7 +1467,7 @@ Deno.serve(async (req) => {
           }).catch(() => {});
         };
 
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref, editStatus);
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref, editStatus, { userId, chatId });
 
         // Delete the status message once we have a final answer
         if (statusMsgId) {
