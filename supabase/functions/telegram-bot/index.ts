@@ -385,6 +385,64 @@ const RESEARCH_TOOLS = [
         additionalProperties: false
       }
     }
+  },
+  {
+    type: "function",
+    function: {
+      name: "pollinations_image",
+      description: "توليد صورة مجانية عبر Pollinations AI (بدون مفتاح، سريع، بديل مجاني لـ generate_image). أعِد رابط الصورة للمستخدم مباشرة.",
+      parameters: {
+        type: "object",
+        properties: {
+          prompt: { type: "string", description: "وصف الصورة (يفضّل الإنجليزية للنتائج الأفضل)" },
+          width: { type: "number", description: "العرض 512-2048", default: 1024 },
+          height: { type: "number", description: "الارتفاع 512-2048", default: 1024 },
+          model: { type: "string", description: "flux | turbo | any", default: "flux" },
+          seed: { type: "number", description: "seed اختياري لتكرار نفس الصورة" }
+        },
+        required: ["prompt"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "youtube_info",
+      description: "معلومات فيديو يوتيوب (عنوان، قناة، صورة مصغّرة) عبر oEmbed دون أي مفتاح.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string", description: "رابط الفيديو" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "spotify_info",
+      description: "معلومات مقطع/ألبوم/قائمة سبوتيفاي عبر oEmbed.",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "youtube_download_audio",
+      description: "استخرج رابط تنزيل صوتي MP3 من فيديو يوتيوب (isAudioOnly).",
+      parameters: {
+        type: "object",
+        properties: { url: { type: "string" } },
+        required: ["url"],
+        additionalProperties: false
+      }
+    }
   }
 ];
 
