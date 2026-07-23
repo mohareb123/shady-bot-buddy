@@ -751,7 +751,8 @@ async function toolBrowserAgent(goal: string, startUrl?: string, contextId?: str
   } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
-async function runAgentTool(name: string, args: any): Promise<string> {
+type AgentCtx = { userId?: number; chatId?: number };
+async function runAgentTool(name: string, args: any, ctx: AgentCtx = {}): Promise<string> {
   switch (name) {
     case 'web_search': return await toolWebSearch(args.query, args.limit || 5);
     case 'browse_url': return await toolBrowseUrl(args.url);
@@ -768,9 +769,9 @@ async function runAgentTool(name: string, args: any): Promise<string> {
     case 'youtube_info': return await toolYoutubeInfo(args.url);
     case 'spotify_info': return await toolSpotifyInfo(args.url);
     case 'youtube_download_audio': return await toolYoutubeDownloadAudio(args.url);
-    case 'memory_save': return await toolMemorySave(args.key, args.value, (globalThis as any).__currentUserId, (globalThis as any).__currentChatId);
-    case 'memory_recall': return await toolMemoryRecall((globalThis as any).__currentUserId);
-    case 'memory_forget': return await toolMemoryForget(args.key, (globalThis as any).__currentUserId);
+    case 'memory_save': return await toolMemorySave(args.key, args.value, ctx.userId, ctx.chatId);
+    case 'memory_recall': return await toolMemoryRecall(ctx.userId);
+    case 'memory_forget': return await toolMemoryForget(args.key, ctx.userId);
     case 'llm_task': return await toolLlmTask(args.prompt, args.model, args.system);
     default: return JSON.stringify({ error: 'unknown tool' });
   }
