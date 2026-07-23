@@ -1465,7 +1465,7 @@ Deno.serve(async (req) => {
           }).catch(() => {});
         };
 
-        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref, editStatus);
+        const aiResult = await getAIResponse(text, hasReplyTarget, userIsAdmin, history, pref, editStatus, { userId, chatId });
 
         // Delete the status message once we have a final answer
         if (statusMsgId) {
