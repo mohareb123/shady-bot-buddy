@@ -888,7 +888,7 @@ async function toolLlmTask(prompt: string, model?: string, system?: string): Pro
   } catch (e) { return JSON.stringify({ error: String(e) }); }
 }
 
-async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }, onProgress?: (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => Promise<void> | void): Promise<{ text: string | null; action: any | null }> {
+async function getAIResponse(text: string, hasReplyTarget: boolean = false, isAdminOrDev: boolean = false, conversationHistory: any[] = [], pref?: { model: string; fast_mode: boolean }, onProgress?: (info: { step: number; phase: 'thinking' | 'tools' | 'done'; tools?: string[] }) => Promise<void> | void, ctx: AgentCtx = {}): Promise<{ text: string | null; action: any | null }> {
   try {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) return { text: null, action: null };
@@ -1009,7 +1009,7 @@ ${hasReplyTarget ? 'الرسالة رد على رسالة شخص آخر - نفّ
         const name = tc.function?.name;
         let args: any = {};
         try { args = JSON.parse(tc.function.arguments || '{}'); } catch {}
-        const result = await runAgentTool(name, args);
+        const result = await runAgentTool(name, args, ctx);
         return { tool_call_id: tc.id, content: result.slice(0, 8000) };
       }));
       for (const r of toolResults) {
